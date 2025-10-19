@@ -1,0 +1,51 @@
+body {
+  width: 300px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  font: 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+header h1 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+#voice {
+  width: 180px;
+}
+
+#speed {
+  width: 140px;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+button {
+  padding: 6px 10px;
+  border: 1px solid rgba(0,0,0,0.15);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+footer {
+  margin-top: 10px;
+  color: #666;
+}

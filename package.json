@@ -1,0 +1,25 @@
+{
+  "name": "tts_extension",
+  "version": "1.0.0",
+  "description": "A cross-browser (Chrome + Firefox) extension that reads web pages aloud using Kokoro TTS with real-time text highlighting.",
+  "main": "content.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SambhavG/tts-extension.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SambhavG/tts-extension/issues"
+  },
+  "homepage": "https://github.com/SambhavG/tts-extension#readme",
+  "dependencies": {
+    "esbuild": "^0.21.5",
+    "kokoro-js": "^1.2.1"
+  }
+}

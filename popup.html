@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Kokoro TTS Reader</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Kokoro Reader</h1>
+    </header>
+
+    <section class="row">
+      <label for="voice">Voice</label>
+      <select id="voice">
+        <option value="">(loading voices…)</option>
+      </select>
+    </section>
+
+    <section class="row">
+      <label for="speed">Speed</label>
+      <input id="speed" type="range" min="0.5" max="2.0" step="0.05" value="1.0" />
+      <output id="speedOut">1.00×</output>
+    </section>
+
+    <section class="row">
+      <label><input id="selectionOnly" type="checkbox" /> Read selection only</label>
+    </section>
+
+    <section class="buttons">
+      <button id="start">Start</button>
+      <button id="pause" disabled>Pause</button>
+      <button id="resume" disabled>Resume</button>
+      <button id="stop" disabled>Stop</button>
+    </section>
+
+    <footer>
+      <small>Hotkeys: Alt+Shift+S (toggle), Alt+Shift+X (stop)</small>
+    </footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

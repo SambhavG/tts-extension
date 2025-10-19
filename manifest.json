@@ -1,0 +1,79 @@
+{
+  "manifest_version": 3,
+  "name": "Kokoro TTS Reader",
+  "version": "0.1.0",
+  "description": "Read web pages with Kokoro TTS and highlight the current text in yellow.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Kokoro TTS Reader"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*",
+    "https://huggingface.co/*",
+    "https://cdn-lfs.huggingface.co/*",
+    "https://cdn.jsdelivr.net/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "*.wasm",
+        "*.onnx",
+        "icons/*",
+        "ttsWorker.js",
+        "vendor/kokoro-js.mjs"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "toggle-read": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Start or pause/resume reading the page"
+    },
+    "stop-read": {
+      "suggested_key": {
+        "default": "Alt+Shift+X"
+      },
+      "description": "Stop reading"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'; connect-src 'self' https://huggingface.co https://cdn-lfs.huggingface.co https://cdn.jsdelivr.net data:"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "kokoro-tts-reader@example.com",
+      "strict_min_version": "115.0"
+    }
+  }
+}

@@ -53,12 +53,15 @@ async function listVoices() {
 
 async function generateParagraphBlob(text, voice = "af_heart") {
   await initTTS();
-  console.log("generateParagraphBlob");
+  // Split on sentence boundaries so we stay under the model's max capacity
+  const sentences = (text || "")
+    .split(/(?<=[\.!\?…])\s+(?=[A-Z0-9“"(\[])|(?<=\n)\s*/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
   const { audioWav } = await callWorker({
-    type: "generate",
-    payload: { text, voice },
+    type: "generateBatch",
+    payload: { sentences: sentences.length ? sentences : [text], voice },
   });
-  console.log("audioWav", audioWav);
   return new Blob([audioWav], { type: "audio/wav" });
 }
 

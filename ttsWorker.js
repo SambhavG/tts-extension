@@ -83,6 +83,28 @@ async function generateAudio(text, voice) {
   return audioWav;
 }
 
+// Generate a single gapless WAV by synthesizing each sentence and concatenating PCM
+async function generateBatch(sentences, voice) {
+  if (!Array.isArray(sentences) || sentences.length === 0) {
+    sentences = [""];
+  }
+  const pcmParts = [];
+  let sampleRate = 24000; // default; will be overwritten by first result
+  for (const s of sentences) {
+    const raw = await ttsInstance.generate(s, { voice: voice || "af_heart" });
+    if (raw?.sampling_rate) sampleRate = raw.sampling_rate;
+    pcmParts.push(raw.audio); // Float32Array
+  }
+  const totalLength = pcmParts.reduce((sum, a) => sum + a.length, 0);
+  const joined = new Float32Array(totalLength);
+  let offset = 0;
+  for (const part of pcmParts) {
+    joined.set(part, offset);
+    offset += part.length;
+  }
+  return encodeWavPCM16(joined, sampleRate);
+}
+
 self.addEventListener("message", async (e) => {
   const { id, type, payload } = e.data;
 
@@ -94,6 +116,9 @@ self.addEventListener("message", async (e) => {
     self.postMessage({ id, ok: true, voices });
   } else if (type === "generate") {
     const audioWav = await generateAudio(payload.text, payload.voice, payload.speed);
+    self.postMessage({ id, ok: true, audioWav });
+  } else if (type === "generateBatch") {
+    const audioWav = await generateBatch(payload.sentences, payload.voice);
     self.postMessage({ id, ok: true, audioWav });
   }
 });

@@ -51,12 +51,12 @@ async function listVoices() {
   return Array.isArray(voices) ? voices : [];
 }
 
-async function generateParagraphBlob(text, voice = "af_heart", speed = 1.0) {
+async function generateParagraphBlob(text, voice = "af_heart") {
   await initTTS();
   console.log("generateParagraphBlob");
   const { audioWav } = await callWorker({
     type: "generate",
-    payload: { text, voice, speed },
+    payload: { text, voice },
   });
   console.log("audioWav", audioWav);
   return new Blob([audioWav], { type: "audio/wav" });
@@ -64,29 +64,103 @@ async function generateParagraphBlob(text, voice = "af_heart", speed = 1.0) {
 
 const api = chrome; // Firefox aliases chrome to browser
 
-// --- Highlighter (element-level, robust & fast)
+// --- Highlighter (text-range)
 class Highlighter {
   constructor() {
-    this.prev = null;
-  }
-  highlight(el) {
-    if (!el) return;
-    this.clear();
-    this.prev = el;
-    el.classList.add("kokoro-tts-highlight");
-    // ensure it's visible
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    this.prevEl = null;
+    this.prevWrapper = null;
   }
   clear() {
-    if (this.prev) {
-      this.prev.classList.remove("kokoro-tts-highlight");
-      this.prev = null;
+    if (this.prevEl) {
+      this.prevEl.classList.remove("kokoro-tts-highlight");
+      this.prevEl = null;
     }
+    if (this.prevWrapper && this.prevWrapper.parentNode) {
+      const wrapper = this.prevWrapper;
+      while (wrapper.firstChild) {
+        wrapper.parentNode.insertBefore(wrapper.firstChild, wrapper);
+      }
+      wrapper.parentNode.removeChild(wrapper);
+      this.prevWrapper = null;
+    }
+  }
+  highlight(el, text) {
+    if (!el) return;
+    this.clear();
+    if (text && typeof text === "string" && text.trim()) {
+      const res = this.wrapTextRange(el, text);
+      if (res && res.wrapper) {
+        this.prevWrapper = res.wrapper;
+        res.wrapper.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        return;
+      }
+    }
+    this.prevEl = el;
+    el.classList.add("kokoro-tts-highlight");
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  wrapTextRange(rootEl, targetText) {
+    const tw = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+    const map = [];
+    let norm = "";
+    let node;
+    let prevWasSpace = false;
+    while ((node = tw.nextNode())) {
+      const s = node.nodeValue || "";
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        const isSpace = /\s/.test(ch);
+        if (isSpace) {
+          if (prevWasSpace) continue;
+          norm += " ";
+          map.push({ node, offset: i });
+          prevWasSpace = true;
+        } else {
+          norm += ch;
+          map.push({ node, offset: i });
+          prevWasSpace = false;
+        }
+      }
+    }
+    const target = targetText.replace(/\s+/g, " ").trim();
+    const startIdx = norm.indexOf(target);
+    if (startIdx === -1) return null;
+    const endIdx = startIdx + target.length - 1;
+    const start = map[startIdx];
+    const end = map[endIdx];
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset + 1);
+    const span = document.createElement("span");
+    span.className = "kokoro-tts-highlight";
+    const contents = range.extractContents();
+    span.appendChild(contents);
+    range.insertNode(span);
+    return { wrapper: span };
   }
 }
 
 // --- Utilities to collect readable blocks
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG", "CANVAS", "VIDEO", "AUDIO"]);
+const SIMPLE_INLINE_TAGS = new Set([
+  "A",
+  "B",
+  "I",
+  "EM",
+  "STRONG",
+  "U",
+  "SMALL",
+  "SUB",
+  "SUP",
+  "CODE",
+  "KBD",
+  "SAMP",
+  "MARK",
+  "LABEL",
+  "BUTTON",
+]);
+const MIN_TEXT_LEN = 20; // minimum normalized text length for a block
+const PREREAD_AHEAD = 2; // how many blocks ahead to pre-generate
 function isVisible(el) {
   const rect = el.getBoundingClientRect();
   const style = getComputedStyle(el);
@@ -113,12 +187,74 @@ function isReadableBlock(el) {
   return false;
 }
 
+function normalizeTextContent(el) {
+  const text = el.innerText || el.textContent || "";
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function isCandidateTextContainer(el) {
+  if (!(el instanceof HTMLElement)) return false;
+  if (!isVisible(el)) return false;
+  if (SKIP_TAGS.has(el.tagName)) return false;
+  if (SIMPLE_INLINE_TAGS.has(el.tagName)) return false;
+  const norm = normalizeTextContent(el);
+  if (norm.length < MIN_TEXT_LEN) return false;
+  return true;
+}
+
+function isAncestorOf(a, b) {
+  if (!a || !b) return false;
+  return a !== b && a.contains(b);
+}
+
+function generateXPath(el) {
+  if (!(el instanceof Element)) return "";
+  const segments = [];
+  let node = el;
+  while (node && node.nodeType === 1 && node !== document.documentElement) {
+    const tag = node.tagName.toLowerCase();
+    let index = 1;
+    let sib = node.previousElementSibling;
+    while (sib) {
+      if (sib.tagName === node.tagName) index++;
+      sib = sib.previousElementSibling;
+    }
+    segments.unshift(`${tag}[${index}]`);
+    node = node.parentElement;
+  }
+  return `/${segments.join("/")}`;
+}
+
+function resolveXPath(xpath) {
+  const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+  return result.singleNodeValue;
+}
+
 function chooseRoot() {
   const article = document.querySelector("article");
   if (article && isVisible(article)) return article;
   const main = document.querySelector("main");
   if (main && isVisible(main)) return main;
   return document.body;
+}
+
+function collectTextContainers(root) {
+  const all = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
+  let n;
+  while ((n = walker.nextNode())) {
+    if (!(n instanceof HTMLElement)) continue;
+    if (!isCandidateTextContainer(n)) continue;
+    all.push(n);
+  }
+  const set = new Set(all);
+  const lowest = all.filter((el) => {
+    for (const other of set) {
+      if (other !== el && isAncestorOf(el, other)) return false;
+    }
+    return true;
+  });
+  return lowest.map((el) => ({ xpath: generateXPath(el), el, text: normalizeTextContent(el) }));
 }
 
 function collectBlocks(root) {
@@ -170,6 +306,7 @@ class KokoroReader {
     this.settings = { voice: "af_heart", speed: 1.0, selectionOnly: false };
     this.state = "idle"; // idle | playing | paused
     this.abortController = null;
+    this.audioCache = new Map();
   }
 
   async buildQueue() {
@@ -179,14 +316,8 @@ class KokoroReader {
 
     const root = hasSelection ? sel.getRangeAt(0).commonAncestorContainer : chooseRoot();
     const rootEl = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
-    const blocks = collectBlocks(rootEl || document.body);
-
-    const items = [];
-    for (const b of blocks) {
-      const chunks = splitToChunks(b.text, 220);
-      for (const c of chunks) items.push({ el: b.el, text: c });
-    }
-    this.queue = items;
+    const containers = collectTextContainers(rootEl || document.body);
+    this.queue = containers.map((c) => ({ xpath: c.xpath, el: c.el, text: c.text }));
     this.idx = -1;
   }
 
@@ -208,18 +339,36 @@ class KokoroReader {
     return { ok: true };
   }
 
+  ensurePrefetch(startIndex) {
+    for (let j = startIndex; j < Math.min(this.queue.length, startIndex + PREREAD_AHEAD); j++) {
+      if (!this.audioCache.has(j)) {
+        const item = this.queue[j];
+        const p = generateParagraphBlob(item.text, this.settings.voice);
+        this.audioCache.set(j, p);
+      }
+    }
+  }
+
   async loop(signal) {
     for (let i = 0; i < this.queue.length; i++) {
       if (signal.aborted) break;
       this.idx = i;
       const item = this.queue[i];
 
-      // Highlight current element
-      this.highlighter.highlight(item.el);
+      // Highlight current text within the element
+      const currentEl = item.el && document.contains(item.el) ? item.el : resolveXPath(item.xpath);
+      this.highlighter.highlight(currentEl, item.text);
 
-      // Generate TTS
+      // Pre-generate next items while current is playing
+      this.ensurePrefetch(i + 1);
+
+      // Generate or reuse TTS for current
       let blob;
-      blob = await generateParagraphBlob(item.text, this.settings.voice, this.settings.speed);
+      if (this.audioCache.has(i)) {
+        blob = await this.audioCache.get(i);
+      } else {
+        blob = await generateParagraphBlob(item.text, this.settings.voice);
+      }
 
       if (signal.aborted) break;
 
@@ -228,6 +377,13 @@ class KokoroReader {
       await this.playUrl(url, signal);
 
       if (signal.aborted) break;
+
+      // Cleanup cache outside the useful window
+      const toDelete = [];
+      for (const [k] of this.audioCache) {
+        if (k < i || k > i + PREREAD_AHEAD) toDelete.push(k);
+      }
+      for (const k of toDelete) this.audioCache.delete(k);
     }
 
     this.highlighter.clear();
@@ -245,6 +401,9 @@ class KokoroReader {
       const audio = document.createElement("audio");
       audio.src = url;
       audio.preload = "metadata";
+      const rate = this.settings?.speed || 1.0;
+      audio.defaultPlaybackRate = rate;
+      audio.playbackRate = rate;
       audio.addEventListener("ended", resolve, { once: true });
 
       // Pause handling
@@ -336,6 +495,13 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "kokoro:resume": {
         const res = await reader.resume();
         sendResponse(res);
+        break;
+      }
+      case "kokoro:setSpeed": {
+        const speed = Number(msg.speed) || 1.0;
+        reader.settings.speed = speed;
+        if (reader.audio) reader.audio.playbackRate = speed;
+        sendResponse({ ok: true });
         break;
       }
       case "kokoro:stop": {

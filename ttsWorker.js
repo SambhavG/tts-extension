@@ -74,14 +74,11 @@ async function getVoices() {
   return Object.keys(ttsInstance.voices || {});
 }
 
-async function generateAudio(text, voice, speed) {
+async function generateAudio(text, voice) {
   // Generate audio using kokoro-js
-  console.log("generateAudio", text, voice, speed);
   const raw = await ttsInstance.generate(text, {
     voice: voice || "af_heart",
-    // speed: speed || 1.0,
   });
-  // raw is { audio: Float32Array, sampling_rate: number }
   const audioWav = encodeWavPCM16(raw.audio, raw.sampling_rate);
   return audioWav;
 }

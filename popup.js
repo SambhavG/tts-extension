@@ -184,7 +184,25 @@ $stop.addEventListener("click", async () => {
   }
 });
 
-$speed.addEventListener("input", updateSpeedOut);
+$speed.addEventListener("input", async () => {
+  updateSpeedOut();
+  const injected = await ensureInjected();
+  if (!injected) return;
+  // Persist the latest speed so it's remembered
+  const speed = Number($speed.value);
+  await api.storage.sync.set({ kokoroSpeed: speed });
+  // Send a live speed update to the content script
+  await sendToActiveTab({ type: "kokoro:setSpeed", speed });
+});
+
+$speed.addEventListener("change", async () => {
+  updateSpeedOut();
+  const injected = await ensureInjected();
+  if (!injected) return;
+  const speed = Number($speed.value);
+  await api.storage.sync.set({ kokoroSpeed: speed });
+  await sendToActiveTab({ type: "kokoro:setSpeed", speed });
+});
 
 (async function init() {
   await initUIFromStorage();

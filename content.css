@@ -10,3 +10,8 @@
   outline: 2px solid rgba(255, 208, 0, 0.8);
   outline-offset: 2px;
 }
+
+/* Indicate interactivity on readable blocks */
+.kokoro-tts-clickable {
+  cursor: pointer !important;
+}

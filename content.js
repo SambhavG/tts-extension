@@ -321,6 +321,26 @@ class KokoroReader {
     const rootEl = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
     const containers = collectTextContainers(rootEl || document.body);
     this.queue = containers.map((c) => ({ xpath: c.xpath, el: c.el, text: c.text }));
+    // Bind click/keyboard handlers to allow jumping to a specific block
+    this.queue.forEach((item, i) => {
+      const el = item.el && document.contains(item.el) ? item.el : resolveXPath(item.xpath);
+      if (!el) return;
+      if (el.dataset.kokoroClickableBound === "1") return;
+      el.dataset.kokoroClickableBound = "1";
+      el.classList.add("kokoro-tts-clickable");
+      el.addEventListener("click", () => {
+        this.jumpTo(i);
+      });
+      el.addEventListener("keydown", (e) => {
+        const key = e.key || e.code;
+        if (key === "Enter" || key === " ") {
+          e.preventDefault();
+          this.jumpTo(i);
+        }
+      });
+      if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
+      if (!el.hasAttribute("role")) el.setAttribute("role", "button");
+    });
     this.idx = -1;
   }
 
@@ -338,7 +358,7 @@ class KokoroReader {
     }
     this.state = "playing";
     this.abortController = new AbortController();
-    this.loop(this.abortController.signal);
+    this.loop(this.abortController.signal, 0);
     return { ok: true };
   }
 
@@ -352,8 +372,8 @@ class KokoroReader {
     }
   }
 
-  async loop(signal) {
-    for (let i = 0; i < this.queue.length; i++) {
+  async loop(signal, startIndex = 0) {
+    for (let i = Math.max(0, startIndex); i < this.queue.length; i++) {
       if (signal.aborted) break;
       this.idx = i;
       const item = this.queue[i];
@@ -392,6 +412,18 @@ class KokoroReader {
     this.highlighter.clear();
     this.state = "idle";
     this.idx = -1;
+  }
+
+  async jumpTo(index) {
+    if (!Array.isArray(this.queue) || index < 0 || index >= this.queue.length) {
+      return { ok: false };
+    }
+    if (this.abortController) this.abortController.abort();
+    this.abortController = new AbortController();
+    this.audioCache = new Map();
+    this.state = "playing";
+    this.loop(this.abortController.signal, index);
+    return { ok: true };
   }
 
   playUrl(url, signal) {

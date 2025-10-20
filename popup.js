@@ -31,7 +31,9 @@ const $resume = document.getElementById("resume");
 const $stop = document.getElementById("stop");
 
 function updateSpeedOut() {
-  $speedOut.textContent = `${Number($speed.value).toFixed(2)}×`;
+  if ($speedOut && $speed) {
+    $speedOut.textContent = `${Number($speed.value).toFixed(2)}×`;
+  }
 }
 
 async function ensureInjected() {
@@ -107,9 +109,11 @@ async function refreshVoices() {
     $voice.appendChild(opt);
   }
   // Load saved voice if any
+  const desired = $voice.dataset.desiredVoice;
   const { kokoroVoice } = await api.storage.sync.get("kokoroVoice");
-  if (kokoroVoice && voices.includes(kokoroVoice)) $voice.value = kokoroVoice;
-  $start.disabled = false;
+  const pick = desired || kokoroVoice;
+  if (pick && voices.includes(pick)) $voice.value = pick;
+  // Do not override transport button states here; they are set by content state
 }
 
 async function initUIFromStorage() {
@@ -120,6 +124,42 @@ async function initUIFromStorage() {
   $speed.value = kokoroSpeed;
   updateSpeedOut();
   $selectionOnly.checked = kokoroSelectionOnly;
+}
+
+async function initUIFromContentState() {
+  const injected = await ensureInjected();
+  if (!injected) return;
+  const stateRes = await sendToActiveTab({ type: "kokoro:getState" });
+  if (!stateRes?.ok) return;
+  const { state, settings } = stateRes;
+  if (settings) {
+    if (typeof settings.speed === "number") {
+      $speed.value = settings.speed;
+      updateSpeedOut();
+    }
+    if (typeof settings.selectionOnly === "boolean") {
+      $selectionOnly.checked = settings.selectionOnly;
+    }
+    if (settings.voice) {
+      $voice.dataset.desiredVoice = settings.voice;
+    }
+  }
+  if (state === "playing") {
+    $start.disabled = true;
+    $pause.disabled = false;
+    $resume.disabled = true;
+    $stop.disabled = false;
+  } else if (state === "paused") {
+    $start.disabled = true;
+    $pause.disabled = true;
+    $resume.disabled = false;
+    $stop.disabled = false;
+  } else {
+    $start.disabled = false;
+    $pause.disabled = true;
+    $resume.disabled = true;
+    $stop.disabled = true;
+  }
 }
 
 $start.addEventListener("click", async () => {
@@ -184,6 +224,15 @@ $stop.addEventListener("click", async () => {
   }
 });
 
+$voice.addEventListener("change", async () => {
+  const v = $voice.value || "";
+  await api.storage.sync.set({ kokoroVoice: v });
+});
+
+$selectionOnly.addEventListener("change", async () => {
+  await api.storage.sync.set({ kokoroSelectionOnly: $selectionOnly.checked });
+});
+
 $speed.addEventListener("input", async () => {
   updateSpeedOut();
   const injected = await ensureInjected();
@@ -206,5 +255,6 @@ $speed.addEventListener("change", async () => {
 
 (async function init() {
   await initUIFromStorage();
+  await initUIFromContentState();
   await refreshVoices();
 })();

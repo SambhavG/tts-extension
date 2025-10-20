@@ -512,6 +512,18 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
+      case "kokoro:getState": {
+        // Report current reader state, settings, and position
+        const idx = typeof reader.idx === "number" ? reader.idx : -1;
+        const total = Array.isArray(reader.queue) ? reader.queue.length : 0;
+        sendResponse({
+          ok: true,
+          state: reader.state,
+          settings: reader.settings,
+          position: { index: idx, total },
+        });
+        break;
+      }
       case "kokoro:listVoices": {
         const voices = await listVoices();
         sendResponse({ ok: true, voices });

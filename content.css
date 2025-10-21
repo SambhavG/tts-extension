@@ -1,12 +1,7 @@
 /* Yellow highlight for the element currently being read */
 .kokoro-tts-highlight {
   background-color: yellow !important;
-  transition: background-color 120ms ease-in-out;
-  /* keep layout stable */
-}
-
-/* A subtle outline helps when the site already uses yellow backgrounds */
-.kokoro-tts-highlight {
+  transition: background-color 300ms ease-in-out;
   outline: 2px solid rgba(255, 208, 0, 0.8);
   outline-offset: 2px;
 }

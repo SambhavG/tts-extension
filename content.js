@@ -9,6 +9,7 @@ const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 function ensureWorker() {
   if (worker) return worker;
+  console.log("[ensureWorker] creating worker");
   // Bootstrap a same-origin blob module that imports the extension worker module
   const workerUrl = chrome.runtime.getURL("ttsWorker.js");
   const bootstrap = `import('${workerUrl}');`;
@@ -530,6 +531,7 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:start": {
+        console.log("[kokoro:start] starting reader", msg);
         const res = await reader.start(msg.settings || {});
         sendResponse(res);
         break;

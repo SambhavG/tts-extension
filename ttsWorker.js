@@ -2,22 +2,19 @@
 // This is adapted from the TypeScript version for use in the extension
 
 let ttsInstance = null;
-const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 async function initTTS(modelId, dtype, device) {
-  if (ttsInstance) return ttsInstance;
+  if (ttsInstance) return;
 
-  // Import module relative to worker script URL (works in worker context without chrome API)
   const { KokoroTTS } = await import(new URL("./vendor/kokoro-js.mjs", import.meta.url));
 
-  // Initialize the TTS instance
-  console.log("Awaiting KokoroTTS.from_pretrained");
+  console.log("[initTTS] Awaiting KokoroTTS.from_pretrained");
   ttsInstance = await KokoroTTS.from_pretrained(modelId, {
     dtype: dtype || "fp32",
     device: device || "webgpu",
   });
-  console.log("KokoroTTS.from_pretrained", ttsInstance);
-  return ttsInstance;
+  console.log("[initTTS] KokoroTTS.from_pretrained done", ttsInstance);
+  return;
 }
 
 // Encode mono Float32 PCM data to a 16-bit PCM WAV ArrayBuffer
@@ -85,13 +82,15 @@ async function generateAudio(text, voice) {
 
 // Generate a single gapless WAV by synthesizing each sentence and concatenating PCM
 async function generateBatch(sentences, voice) {
+  console.log("[generateBatch] sentences", sentences);
   if (!Array.isArray(sentences) || sentences.length === 0) {
     sentences = [""];
   }
   const pcmParts = [];
   let sampleRate = 24000; // default; will be overwritten by first result
-  for (const s of sentences) {
-    const raw = await ttsInstance.generate(s, { voice: voice || "af_heart" });
+  const promises = sentences.map((s) => ttsInstance.generate(s, { voice: voice || "af_heart" }));
+  const results = await Promise.all(promises);
+  for (const raw of results) {
     if (raw?.sampling_rate) sampleRate = raw.sampling_rate;
     pcmParts.push(raw.audio); // Float32Array
   }

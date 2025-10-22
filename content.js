@@ -270,46 +270,6 @@ function collectTextContainers(root) {
   return lowest.map((el) => ({ xpath: generateXPath(el), el, text: normalizeTextContent(el) }));
 }
 
-function collectBlocks(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
-    acceptNode(node) {
-      if (!(node instanceof HTMLElement)) return NodeFilter.FILTER_REJECT;
-      if (!isVisible(node)) return NodeFilter.FILTER_REJECT;
-      if (isReadableBlock(node)) return NodeFilter.FILTER_ACCEPT;
-      return NodeFilter.FILTER_SKIP;
-    },
-  });
-  const out = [];
-  let n;
-  while ((n = walker.nextNode())) {
-    const text = n.textContent?.replace(/\s+/g, " ").trim() || "";
-    if (text.length >= 20) out.push({ el: n, text });
-  }
-  return out;
-}
-
-function splitToChunks(text, target = 220) {
-  // Prefer sentence-ish boundaries, else chunk by length
-  const sentences = text
-    .split(/(?<=[\.\!\?…])\s+(?=[A-Z0-9“"(\[])|(?<=\n)\s*/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  const chunks = [];
-  let buf = "";
-  for (const s of sentences.length ? sentences : [text]) {
-    if ((buf + " " + s).trim().length > target && buf) {
-      chunks.push(buf.trim());
-      buf = s;
-    } else {
-      buf = (buf + " " + s).trim();
-    }
-  }
-  if (buf) chunks.push(buf);
-  return chunks;
-}
-
-// --- Reader
 class KokoroReader {
   constructor() {
     this.queue = [];
@@ -459,23 +419,6 @@ class KokoroReader {
 
       this.audio = audio;
       audio.play();
-    });
-  }
-
-  nativeSpeak(text, signal) {
-    return new Promise((resolve) => {
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = this.settings.speed || 1.0;
-      u.onend = resolve;
-      window.speechSynthesis.speak(u);
-      signal.addEventListener(
-        "abort",
-        () => {
-          window.speechSynthesis.cancel();
-          resolve();
-        },
-        { once: true }
-      );
     });
   }
 

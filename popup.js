@@ -24,17 +24,6 @@ function sendToActiveTab(message) {
 const $voice = document.getElementById("voice");
 const $speed = document.getElementById("speed");
 const $readButton = document.getElementById("read-button");
-// const $start = document.getElementById("start");
-// const $pause = document.getElementById("pause");
-// const $resume = document.getElementById("resume");
-// const $stop = document.getElementById("stop");
-
-// function updateSpeedOut() {
-//   if ($speedOut && $speed) {
-//     $speedOut.textContent = `${Number($speed.value).toFixed(2)}×`;
-//   }
-// }
-
 async function ensureInjected() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return false;
@@ -80,15 +69,12 @@ async function refreshVoices() {
   const isAvailable = await checkContentScriptAvailability();
   if (!isAvailable) {
     $voice.innerHTML = '<option value="">Extension not available on this page</option>';
-    $start.disabled = true;
     return;
   }
 
-  // Ensure content script is injected and listening
   const injected = await ensureInjected();
   if (!injected) {
     $voice.innerHTML = '<option value="">Content script not loaded. Reload the page and try again.</option>';
-    $start.disabled = true;
     return;
   }
 
@@ -96,7 +82,6 @@ async function refreshVoices() {
   if (!res?.ok) {
     const msg = res?.error || "TTS init failed";
     $voice.innerHTML = `<option value="">${msg}</option>`;
-    $start.disabled = true;
     return;
   }
   const voices = Array.isArray(res.voices) ? res.voices : [];
@@ -104,7 +89,7 @@ async function refreshVoices() {
   for (const v of voices) {
     const opt = document.createElement("option");
     opt.value = v;
-    opt.textContent = v;
+    opt.textContent = (v[0] == "a" ? "🇺🇸" : "🇬🇧") + (v[1] == "f" ? "👩" : "👨") + v.substring(3);
     $voice.appendChild(opt);
   }
   // Load saved voice if any
@@ -112,12 +97,14 @@ async function refreshVoices() {
   const { kokoroVoice } = await api.storage.sync.get("kokoroVoice");
   const pick = desired || kokoroVoice;
   if (pick && voices.includes(pick)) $voice.value = pick;
-  // Do not override transport button states here; they are set by content state
 }
 
-async function initUIFromStorage() {
+async function initState() {
   const { kokoroSpeed = 1.0 } = await api.storage.sync.get(["kokoroSpeed"]);
-  $speed.value = kokoroSpeed;
+  const { kokoroVoice = "af_heart" } = await api.storage.sync.get(["kokoroVoice"]);
+  const speedRes = await sendToActiveTab({ type: "kokoro:setSpeed", speed: kokoroSpeed });
+  const voiceRes = await sendToActiveTab({ type: "kokoro:setVoice", voice: kokoroVoice });
+  initUIFromContentState();
 }
 
 async function initUIFromContentState() {
@@ -126,7 +113,8 @@ async function initUIFromContentState() {
   const stateRes = await sendToActiveTab({ type: "kokoro:getState" });
   if (!stateRes?.ok) return;
   const { state, settings } = stateRes;
-  $speed.value = settings.speed;
+  console.log("[initUIFromContentState] settings", settings);
+  $speed.value = Number(settings.speed).toFixed(2);
   $voice.value = settings.voice;
   if (state === "idle") {
     $readButton.textContent = "Read";
@@ -142,7 +130,6 @@ $readButton.addEventListener("click", async () => {
   if (!injected) return;
 
   await sendToActiveTab({ type: "kokoro:playButtonPressed" });
-
   initUIFromContentState();
 });
 
@@ -150,21 +137,20 @@ $voice.addEventListener("change", async () => {
   const v = $voice.value || "";
   await api.storage.sync.set({ kokoroVoice: v });
   await sendToActiveTab({ type: "kokoro:setVoice", voice: v });
+  await initUIFromContentState();
 });
 
-const speedCallback = async () => {
+$speed.addEventListener("change", async () => {
   const injected = await ensureInjected();
   if (!injected) return;
   const speed = Number($speed.value);
   await api.storage.sync.set({ kokoroSpeed: speed });
   await sendToActiveTab({ type: "kokoro:setSpeed", speed });
-};
-// $speed.addEventListener("input", speedCallback);
-
-$speed.addEventListener("change", speedCallback);
+  await initUIFromContentState();
+});
 
 (async function init() {
-  await initUIFromStorage();
-  await initUIFromContentState();
+  await initState();
+  // await initUIFromContentState();
   await refreshVoices();
 })();

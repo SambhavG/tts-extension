@@ -1,5 +1,6 @@
 // TTS Engine functions (inlined from ttsEngine.js)
 let worker = null;
+let workerReady = null;
 let nextMsgId = 1;
 const pending = new Map();
 let initted = false;
@@ -10,14 +11,21 @@ const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 function ensureWorker() {
   if (worker) return worker;
   console.log("[ensureWorker] creating worker");
-  // Bootstrap a same-origin blob module that imports the extension worker module
+  // Bootstrap a same-origin blob module that imports the extension worker module,
+  // then signals readiness to avoid a first-message race.
   const workerUrl = chrome.runtime.getURL("ttsWorker.js");
-  const bootstrap = `import('${workerUrl}');`;
+  const bootstrap = `import('${workerUrl}').then(() => self.postMessage({ type: 'ready' }));`;
   const blob = new Blob([bootstrap], { type: "text/javascript" });
   const url = URL.createObjectURL(blob);
   worker = new Worker(url, { type: "module" });
+  let resolveReady;
+  workerReady = new Promise((r) => (resolveReady = r));
   worker.addEventListener("message", (e) => {
     const data = e.data || {};
+    if (data && data.type === "ready") {
+      resolveReady?.();
+      return;
+    }
     const { id, ok } = data;
     if (typeof id !== "number") return;
     const p = pending.get(id);
@@ -28,8 +36,9 @@ function ensureWorker() {
   return worker;
 }
 
-function callWorker(message) {
+async function callWorker(message) {
   ensureWorker();
+  if (workerReady) await workerReady;
   return new Promise((resolve, reject) => {
     const id = nextMsgId++;
     pending.set(id, { resolve, reject });

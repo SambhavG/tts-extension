@@ -3,7 +3,7 @@
 }
 
 body {
-  width: 20em;
+  width: 15em;
   margin: 0;
   padding: 0;
   font: 1.1em 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
@@ -140,20 +140,20 @@ label:has(input[type="checkbox"]) {
 
 .buttons {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* grid-template-columns: repeat(2, 1fr); */
   gap: 0.625em;
   margin: 1.25em 1.25em 1em;
   perspective: 37.5em;
 }
 
 button {
-  padding: 0.75em 1em;
-  border: 0.0625em solid rgba(0, 255, 255, 0.3);
+  padding: 1em;
+  border: 0.1em solid rgba(0, 255, 255, 0.3);
   background: linear-gradient(180deg, rgba(30, 40, 70, 0.8) 0%, rgba(15, 20, 45, 0.9) 100%);
   border-radius: 1em;
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.6875em;
+  /* font-size: 0.6875em; */
   transition: all 0.15s ease;
   color: #00ffff;
   box-shadow: 
@@ -161,12 +161,12 @@ button {
     0 0.25em 0 rgba(0, 0, 0, 0.4),
     0 0.125em 0.25em rgba(0, 0, 0, 0.3);
   text-transform: uppercase;
-  letter-spacing: 0.0625em;
+  /* letter-spacing: 0.0625em; */
   position: relative;
   transform-style: preserve-3d;
 }
 
-button::before {
+/* button::before {
   content: '';
   position: absolute;
   top: 0;
@@ -177,7 +177,7 @@ button::before {
   opacity: 0;
   transition: opacity 0.15s ease;
   border-radius: 0.25em;
-}
+} */
 
 button:hover:not(:disabled)::before {
   opacity: 1;

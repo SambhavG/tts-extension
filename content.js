@@ -522,7 +522,8 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           ok: true,
           state: reader.state,
           settings: reader.settings,
-          position: { index: idx, total },
+          index: idx,
+          total: total,
         });
         break;
       }
@@ -532,24 +533,21 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true, voices });
         break;
       }
-      case "kokoro:start": {
-        console.log("[kokoro:start] starting reader", msg);
-        const res = await reader.start(msg.settings || {});
+      case "kokoro:playButtonPressed": {
+        console.log("[kokoro:playButtonPressed] play button pressed");
+        // Switch on reader state
+        let res;
+        if (reader.state === "idle") {
+          res = await reader.start(msg.settings || {});
+        } else if (reader.state === "playing") {
+          res = await reader.pause();
+        } else if (reader.state === "paused") {
+          res = await reader.resume();
+        }
         sendResponse(res);
         break;
       }
-      case "kokoro:pause": {
-        console.log("[kokoro:pause] pausing reader");
-        const res = await reader.pause();
-        sendResponse(res);
-        break;
-      }
-      case "kokoro:resume": {
-        console.log("[kokoro:resume] resuming reader");
-        const res = await reader.resume();
-        sendResponse(res);
-        break;
-      }
+
       case "kokoro:setSpeed": {
         console.log("[kokoro:setSpeed] setting speed", msg);
         const speed = Number(msg.speed) || 1.0;
@@ -558,12 +556,15 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
-      case "kokoro:stop": {
-        console.log("[kokoro:stop] stopping reader");
-        const res = await reader.stop();
-        sendResponse(res);
+
+      case "kokoro:setVoice": {
+        console.log("[kokoro:setVoice] setting voice", msg);
+        const voice = msg.voice || "af_heart";
+        reader.settings.voice = voice;
+        sendResponse({ ok: true });
         break;
       }
+
       default:
         console.log("[kokoro:unknown_message] unknown message", msg);
         sendResponse({ ok: false, error: "unknown_message" });

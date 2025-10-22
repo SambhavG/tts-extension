@@ -23,10 +23,11 @@ function sendToActiveTab(message) {
 
 const $voice = document.getElementById("voice");
 const $speed = document.getElementById("speed");
-const $start = document.getElementById("start");
-const $pause = document.getElementById("pause");
-const $resume = document.getElementById("resume");
-const $stop = document.getElementById("stop");
+const $readButton = document.getElementById("read-button");
+// const $start = document.getElementById("start");
+// const $pause = document.getElementById("pause");
+// const $resume = document.getElementById("resume");
+// const $stop = document.getElementById("stop");
 
 // function updateSpeedOut() {
 //   if ($speedOut && $speed) {
@@ -125,117 +126,42 @@ async function initUIFromContentState() {
   const stateRes = await sendToActiveTab({ type: "kokoro:getState" });
   if (!stateRes?.ok) return;
   const { state, settings } = stateRes;
-  if (settings) {
-    if (typeof settings.speed === "number") {
-      $speed.value = settings.speed;
-      // updateSpeedOut();
-    }
-    if (settings.voice) {
-      $voice.dataset.desiredVoice = settings.voice;
-    }
-  }
-  if (state === "playing") {
-    $start.disabled = true;
-    $pause.disabled = false;
-    $resume.disabled = true;
-    $stop.disabled = false;
+  $speed.value = settings.speed;
+  $voice.value = settings.voice;
+  if (state === "idle") {
+    $readButton.textContent = "Read";
+  } else if (state === "playing") {
+    $readButton.textContent = "Pause";
   } else if (state === "paused") {
-    $start.disabled = true;
-    $pause.disabled = true;
-    $resume.disabled = false;
-    $stop.disabled = false;
-  } else {
-    $start.disabled = false;
-    $pause.disabled = true;
-    $resume.disabled = true;
-    $stop.disabled = true;
+    $readButton.textContent = "Resume";
   }
 }
 
-$start.addEventListener("click", async () => {
-  const settings = {
-    voice: $voice.value || "af_heart",
-    speed: Number($speed.value),
-  };
-  await api.storage.sync.set({
-    kokoroVoice: settings.voice,
-    kokoroSpeed: settings.speed,
-  });
+$readButton.addEventListener("click", async () => {
   const injected = await ensureInjected();
   if (!injected) return;
-  const res = await sendToActiveTab({ type: "kokoro:start", settings });
-  if (res?.ok) {
-    $pause.disabled = false;
-    $stop.disabled = false;
-    $start.disabled = true;
-    $resume.disabled = true;
-  } else {
-    alert("Failed to start reading: " + (res?.error || "Content script not available"));
-  }
-});
 
-$pause.addEventListener("click", async () => {
-  const injected = await ensureInjected();
-  if (!injected) return;
-  const res = await sendToActiveTab({ type: "kokoro:pause" });
-  if (res?.ok) {
-    $pause.disabled = true;
-    $resume.disabled = false;
-  } else {
-    alert("Failed to pause: " + (res?.error || "Content script not available"));
-  }
-});
+  await sendToActiveTab({ type: "kokoro:playButtonPressed" });
 
-$resume.addEventListener("click", async () => {
-  const injected = await ensureInjected();
-  if (!injected) return;
-  const res = await sendToActiveTab({ type: "kokoro:resume" });
-  if (res?.ok) {
-    $pause.disabled = false;
-    $resume.disabled = true;
-  } else {
-    alert("Failed to resume: " + (res?.error || "Content script not available"));
-  }
-});
-
-$stop.addEventListener("click", async () => {
-  const injected = await ensureInjected();
-  if (!injected) return;
-  const res = await sendToActiveTab({ type: "kokoro:stop" });
-  if (res?.ok) {
-    $start.disabled = false;
-    $pause.disabled = true;
-    $resume.disabled = true;
-    $stop.disabled = true;
-  } else {
-    alert("Failed to stop: " + (res?.error || "Content script not available"));
-  }
+  initUIFromContentState();
 });
 
 $voice.addEventListener("change", async () => {
   const v = $voice.value || "";
   await api.storage.sync.set({ kokoroVoice: v });
+  await sendToActiveTab({ type: "kokoro:setVoice", voice: v });
 });
 
-$speed.addEventListener("input", async () => {
-  // updateSpeedOut();
-  const injected = await ensureInjected();
-  if (!injected) return;
-  // Persist the latest speed so it's remembered
-  const speed = Number($speed.value);
-  await api.storage.sync.set({ kokoroSpeed: speed });
-  // Send a live speed update to the content script
-  await sendToActiveTab({ type: "kokoro:setSpeed", speed });
-});
-
-$speed.addEventListener("change", async () => {
-  // updateSpeedOut();
+const speedCallback = async () => {
   const injected = await ensureInjected();
   if (!injected) return;
   const speed = Number($speed.value);
   await api.storage.sync.set({ kokoroSpeed: speed });
   await sendToActiveTab({ type: "kokoro:setSpeed", speed });
-});
+};
+// $speed.addEventListener("input", speedCallback);
+
+$speed.addEventListener("change", speedCallback);
 
 (async function init() {
   await initUIFromStorage();

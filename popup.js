@@ -23,18 +23,16 @@ function sendToActiveTab(message) {
 
 const $voice = document.getElementById("voice");
 const $speed = document.getElementById("speed");
-const $speedOut = document.getElementById("speedOut");
-const $selectionOnly = document.getElementById("selectionOnly");
 const $start = document.getElementById("start");
 const $pause = document.getElementById("pause");
 const $resume = document.getElementById("resume");
 const $stop = document.getElementById("stop");
 
-function updateSpeedOut() {
-  if ($speedOut && $speed) {
-    $speedOut.textContent = `${Number($speed.value).toFixed(2)}×`;
-  }
-}
+// function updateSpeedOut() {
+//   if ($speedOut && $speed) {
+//     $speedOut.textContent = `${Number($speed.value).toFixed(2)}×`;
+//   }
+// }
 
 async function ensureInjected() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
@@ -117,13 +115,8 @@ async function refreshVoices() {
 }
 
 async function initUIFromStorage() {
-  const { kokoroSpeed = 1.0, kokoroSelectionOnly = false } = await api.storage.sync.get([
-    "kokoroSpeed",
-    "kokoroSelectionOnly",
-  ]);
+  const { kokoroSpeed = 1.0 } = await api.storage.sync.get(["kokoroSpeed"]);
   $speed.value = kokoroSpeed;
-  updateSpeedOut();
-  $selectionOnly.checked = kokoroSelectionOnly;
 }
 
 async function initUIFromContentState() {
@@ -135,10 +128,7 @@ async function initUIFromContentState() {
   if (settings) {
     if (typeof settings.speed === "number") {
       $speed.value = settings.speed;
-      updateSpeedOut();
-    }
-    if (typeof settings.selectionOnly === "boolean") {
-      $selectionOnly.checked = settings.selectionOnly;
+      // updateSpeedOut();
     }
     if (settings.voice) {
       $voice.dataset.desiredVoice = settings.voice;
@@ -166,12 +156,10 @@ $start.addEventListener("click", async () => {
   const settings = {
     voice: $voice.value || "af_heart",
     speed: Number($speed.value),
-    selectionOnly: $selectionOnly.checked,
   };
   await api.storage.sync.set({
     kokoroVoice: settings.voice,
     kokoroSpeed: settings.speed,
-    kokoroSelectionOnly: settings.selectionOnly,
   });
   const injected = await ensureInjected();
   if (!injected) return;
@@ -229,12 +217,8 @@ $voice.addEventListener("change", async () => {
   await api.storage.sync.set({ kokoroVoice: v });
 });
 
-$selectionOnly.addEventListener("change", async () => {
-  await api.storage.sync.set({ kokoroSelectionOnly: $selectionOnly.checked });
-});
-
 $speed.addEventListener("input", async () => {
-  updateSpeedOut();
+  // updateSpeedOut();
   const injected = await ensureInjected();
   if (!injected) return;
   // Persist the latest speed so it's remembered
@@ -245,7 +229,7 @@ $speed.addEventListener("input", async () => {
 });
 
 $speed.addEventListener("change", async () => {
-  updateSpeedOut();
+  // updateSpeedOut();
   const injected = await ensureInjected();
   if (!injected) return;
   const speed = Number($speed.value);

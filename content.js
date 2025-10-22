@@ -307,7 +307,7 @@ class KokoroReader {
     this.idx = -1;
     this.audio = null;
     this.highlighter = new Highlighter();
-    this.settings = { voice: "af_heart", speed: 1.0, selectionOnly: false };
+    this.settings = { voice: "af_heart", speed: 1.0 };
     this.state = "idle"; // idle | playing | paused
     this.abortController = null;
     this.audioCache = new Map();
@@ -315,8 +315,7 @@ class KokoroReader {
 
   async buildQueue() {
     const sel = window.getSelection();
-    const hasSelection =
-      this.settings.selectionOnly && sel && !sel.isCollapsed && sel.rangeCount > 0 && sel.toString().trim().length > 0;
+    const hasSelection = false;
 
     const root = hasSelection ? sel.getRangeAt(0).commonAncestorContainer : chooseRoot();
     const rootEl = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
@@ -510,10 +509,12 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     switch (msg?.type) {
       case "kokoro:ping": {
+        console.log("[kokoro:ping] pinging reader");
         sendResponse({ ok: true });
         break;
       }
       case "kokoro:getState": {
+        console.log("[kokoro:getState] getting state of reader");
         // Report current reader state, settings, and position
         const idx = typeof reader.idx === "number" ? reader.idx : -1;
         const total = Array.isArray(reader.queue) ? reader.queue.length : 0;
@@ -526,6 +527,7 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:listVoices": {
+        console.log("[kokoro:listVoices] listing voices");
         const voices = await listVoices();
         sendResponse({ ok: true, voices });
         break;
@@ -537,16 +539,19 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:pause": {
+        console.log("[kokoro:pause] pausing reader");
         const res = await reader.pause();
         sendResponse(res);
         break;
       }
       case "kokoro:resume": {
+        console.log("[kokoro:resume] resuming reader");
         const res = await reader.resume();
         sendResponse(res);
         break;
       }
       case "kokoro:setSpeed": {
+        console.log("[kokoro:setSpeed] setting speed", msg);
         const speed = Number(msg.speed) || 1.0;
         reader.settings.speed = speed;
         if (reader.audio) reader.audio.playbackRate = speed;
@@ -554,11 +559,13 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:stop": {
+        console.log("[kokoro:stop] stopping reader");
         const res = await reader.stop();
         sendResponse(res);
         break;
       }
       default:
+        console.log("[kokoro:unknown_message] unknown message", msg);
         sendResponse({ ok: false, error: "unknown_message" });
     }
   })();

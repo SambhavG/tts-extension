@@ -11,8 +11,6 @@ const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 function ensureWorker() {
   if (worker) return worker;
   console.log("[ensureWorker] creating worker");
-  // Bootstrap a same-origin blob module that imports the extension worker module,
-  // then signals readiness to avoid a first-message race.
   const workerUrl = chrome.runtime.getURL("ttsWorker.js");
   const bootstrap = `import('${workerUrl}').then(() => self.postMessage({ type: 'ready' }));`;
   const blob = new Blob([bootstrap], { type: "text/javascript" });
@@ -477,6 +475,16 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           index: idx,
           total: total,
         });
+        break;
+      }
+      case "kokoro:getModelStatus": {
+        console.log("[kokoro:getModelStatus] checking if model is loaded");
+        if (!worker || !initted) {
+          sendResponse({ ok: true, loaded: false });
+        } else {
+          const { loaded } = await callWorker({ type: "status" });
+          sendResponse({ ok: true, loaded });
+        }
         break;
       }
       case "kokoro:listVoices": {

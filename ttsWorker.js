@@ -110,6 +110,8 @@ self.addEventListener("message", async (e) => {
   if (type === "init") {
     await initTTS(payload.modelId, payload.dtype, payload.device);
     self.postMessage({ id, ok: true });
+  } else if (type === "status") {
+    self.postMessage({ id, ok: true, loaded: ttsInstance !== null });
   } else if (type === "voices") {
     const voices = await getVoices();
     self.postMessage({ id, ok: true, voices });

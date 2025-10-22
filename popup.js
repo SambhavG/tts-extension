@@ -21,9 +21,11 @@ function sendToActiveTab(message) {
   });
 }
 
+const $status = document.getElementById("status");
 const $voice = document.getElementById("voice");
 const $speed = document.getElementById("speed");
 const $readButton = document.getElementById("read-button");
+
 async function ensureInjected() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return false;
@@ -149,7 +151,42 @@ $speed.addEventListener("change", async () => {
   await initUIFromContentState();
 });
 
+async function checkModelStatus() {
+  const injected = await ensureInjected();
+  if (!injected) {
+    $status.style.display = "none";
+    return;
+  }
+
+  const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
+  if (res?.loaded) {
+    $status.style.display = "none";
+  } else {
+    $status.style.display = "flex";
+    $status.innerHTML = `
+      <span class="loading-text">Model is loading</span>
+      <div class="sine-wave">
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+      </div>
+    `;
+    // Check again in 500ms
+    setTimeout(checkModelStatus, 500);
+  }
+}
+
 (async function init() {
+  await checkModelStatus();
   await initState();
   // await initUIFromContentState();
   await refreshVoices();

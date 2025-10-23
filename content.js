@@ -346,7 +346,14 @@ class KokoroReader {
     const root = hasSelection ? sel.getRangeAt(0).commonAncestorContainer : chooseRoot();
     const rootEl = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
     const containers = collectTextContainers(rootEl || document.body);
-    this.queue = containers.map((c) => ({ xpath: c.xpath, el: c.el, text: c.text }));
+    this.queue = containers.map((c) => ({
+      xpath: c.xpath,
+      el: c.el,
+      text: c.text,
+      genStatus: "not_generated", // not_generated | generating | generated
+      genPromise: null,
+      blob: null,
+    }));
     // Bind click/keyboard handlers to allow jumping to a specific block
     this.queue.forEach((item, i) => {
       const el = item.el && document.contains(item.el) ? item.el : resolveXPath(item.xpath);
@@ -361,6 +368,28 @@ class KokoroReader {
       if (!el.hasAttribute("role")) el.setAttribute("role", "button");
     });
     this.idx = -1;
+  }
+
+  // Centralized generation respecting per-item state
+  generateForIndex(index) {
+    const item = this.queue[index];
+    if (!item) return null;
+    if (item.genStatus === "generated") {
+      return Promise.resolve(item.blob);
+    }
+    if (item.genStatus === "generating" && item.genPromise) {
+      return item.genPromise;
+    }
+    // Start generation
+    item.genStatus = "generating";
+    const p = (async () => {
+      const blob = await generateParagraphBlob(item.text, this.settings.voice);
+      item.blob = blob;
+      item.genStatus = "generated";
+      return blob;
+    })();
+    item.genPromise = p;
+    return p;
   }
 
   async start(settings) {
@@ -393,12 +422,13 @@ class KokoroReader {
     return { ok: true };
   }
 
-  ensurePrefetch(startIndex) {
+  async ensurePrefetch(startIndex) {
     for (let j = startIndex; j < Math.min(this.queue.length, startIndex + PREREAD_AHEAD); j++) {
-      if (this.audioCache.has(j)) {
-        continue;
-      }
-      this.audioCache.set(j, generateParagraphBlob(this.queue[j].text, this.settings.voice));
+      const item = this.queue[j];
+      if (!item) continue;
+      if (item.genStatus === "generated" || item.genStatus === "generating") continue;
+      // Fire-and-forget generation kickoff; do not await here
+      this.generateForIndex(j);
     }
   }
 
@@ -424,16 +454,8 @@ class KokoroReader {
       const currentEl = item.el && document.contains(item.el) ? item.el : resolveXPath(item.xpath);
       this.highlighter.highlightPending(currentEl, item.text);
 
-      // Pre-generate next items while current is playing
-      this.ensurePrefetch(i + 1);
-
-      // Generate or reuse TTS for current
-      let blob;
-      if (this.audioCache.has(i)) {
-        blob = await this.audioCache.get(i);
-      } else {
-        blob = await generateParagraphBlob(item.text, this.settings.voice);
-      }
+      // Generate or reuse TTS for current via stateful helper
+      const blob = await this.generateForIndex(i);
 
       if (signal.aborted) break;
 
@@ -442,7 +464,11 @@ class KokoroReader {
 
       // Play
       const url = URL.createObjectURL(blob);
-      await this.playUrl(url, signal);
+      let playPromise = this.playUrl(url, signal);
+      // Pre-generate next items while current is playing
+      // Kick off prefetch without awaiting it; only await playback
+      this.ensurePrefetch(i + 1);
+      await playPromise;
 
       if (signal.aborted) break;
 
@@ -579,6 +605,15 @@ class KokoroReader {
     // Called when the user changes the voice (need to regen with new voice)
     await this.stop();
     this.audioCache.clear();
+    // Reset generation state for all items
+    if (Array.isArray(this.queue)) {
+      for (const item of this.queue) {
+        if (!item) continue;
+        item.genStatus = "not_generated";
+        item.genPromise = null;
+        item.blob = null;
+      }
+    }
     return { ok: true };
   }
 }

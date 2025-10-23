@@ -53,6 +53,9 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "commands": {
     "toggle-read": {
       "suggested_key": {
@@ -65,6 +68,18 @@
         "default": "Alt+Shift+X"
       },
       "description": "Stop reading"
+    },
+    "jump-next": {
+      "suggested_key": {
+        "default": "Alt+J"
+      },
+      "description": "Jump to next reading block"
+    },
+    "jump-previous": {
+      "suggested_key": {
+        "default": "Alt+K"
+      },
+      "description": "Jump to previous reading block"
     }
   },
   "content_security_policy": {

@@ -626,13 +626,36 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
-// Keyboard shortcuts
-api.commands?.onCommand?.addListener(async (command) => {
-  if (command === "toggle-read") {
-    if (reader.state === "playing") await reader.pause();
-    else if (reader.state === "paused") await reader.resume();
-    else await reader.start({});
-  } else if (command === "stop-read") {
-    await reader.stop();
-  }
+// Commands forwarded from background
+api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  (async () => {
+    if (msg?.type !== "kokoro:executeCommand") return;
+    const command = msg?.command;
+    if (command === "toggle-read") {
+      if (reader.state === "playing") await reader.pause();
+      else if (reader.state === "paused") await reader.resume();
+      else await reader.start({});
+      sendResponse({ ok: true });
+    } else if (command === "stop-read") {
+      await reader.stop();
+      sendResponse({ ok: true });
+    } else if (command === "jump-next") {
+      const currentIdx = reader.idx !== undefined ? reader.idx : -1;
+      const nextIdx = currentIdx + 1;
+      if (nextIdx < reader.queue.length) {
+        await reader.jumpTo(nextIdx);
+      }
+      sendResponse({ ok: true });
+    } else if (command === "jump-previous") {
+      const currentIdx = reader.idx !== undefined ? reader.idx : -1;
+      const prevIdx = currentIdx - 1;
+      if (prevIdx >= 0) {
+        await reader.jumpTo(prevIdx);
+      }
+      sendResponse({ ok: true });
+    } else {
+      sendResponse({ ok: false, error: "unknown_command" });
+    }
+  })();
+  return true;
 });

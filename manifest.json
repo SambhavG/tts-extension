@@ -12,13 +12,7 @@
     "scripting",
     "storage"
   ],
-  "host_permissions": [
-    "http://*/*",
-    "https://*/*",
-    "https://huggingface.co/*",
-    "https://cdn-lfs.huggingface.co/*",
-    "https://cdn.jsdelivr.net/*"
-  ],
+  "host_permissions": [],
   "content_scripts": [
     {
       "matches": [

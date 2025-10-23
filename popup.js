@@ -115,7 +115,6 @@ async function initUIFromContentState() {
   const stateRes = await sendToActiveTab({ type: "kokoro:getState" });
   if (!stateRes?.ok) return;
   const { state, settings } = stateRes;
-  console.log("[initUIFromContentState] settings", settings);
   $speed.value = Number(settings.speed).toFixed(2);
   $voice.value = settings.voice;
   if (state === "idle") {

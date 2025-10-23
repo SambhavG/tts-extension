@@ -8,7 +8,6 @@ async function initTTS(modelId, dtype, device) {
 
   const { KokoroTTS } = await import(new URL("./vendor/kokoro-js.mjs", import.meta.url));
 
-  console.log("[initTTS] Awaiting KokoroTTS.from_pretrained");
   ttsInstance = await KokoroTTS.from_pretrained(modelId, {
     dtype: dtype || "fp32",
     device: device || "webgpu",

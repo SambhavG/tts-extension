@@ -10,12 +10,15 @@ const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 function ensureWorker() {
   if (worker) return worker;
-  console.log("[ensureWorker] creating worker");
   const workerUrl = chrome.runtime.getURL("ttsWorker.js");
   const bootstrap = `import('${workerUrl}').then(() => self.postMessage({ type: 'ready' }));`;
   const blob = new Blob([bootstrap], { type: "text/javascript" });
   const url = URL.createObjectURL(blob);
   worker = new Worker(url, { type: "module" });
+  worker.onerror = (e) => {
+    console.error("[ensureWorker] unable to create worker, likely due to page's CSP restrictions", e);
+    return null;
+  };
   let resolveReady;
   workerReady = new Promise((r) => (resolveReady = r));
   worker.addEventListener("message", (e) => {
@@ -459,12 +462,10 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     switch (msg?.type) {
       case "kokoro:ping": {
-        console.log("[kokoro:ping] pinging reader");
         sendResponse({ ok: true });
         break;
       }
       case "kokoro:getState": {
-        console.log("[kokoro:getState] getting state of reader");
         // Report current reader state, settings, and position
         const idx = typeof reader.idx === "number" ? reader.idx : -1;
         const total = Array.isArray(reader.queue) ? reader.queue.length : 0;
@@ -478,7 +479,6 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:getModelStatus": {
-        console.log("[kokoro:getModelStatus] checking if model is loaded");
         if (!worker || !initted) {
           sendResponse({ ok: true, loaded: false });
         } else {
@@ -488,13 +488,11 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:listVoices": {
-        console.log("[kokoro:listVoices] listing voices");
         const voices = await listVoices();
         sendResponse({ ok: true, voices });
         break;
       }
       case "kokoro:playButtonPressed": {
-        console.log("[kokoro:playButtonPressed] play button pressed");
         // Switch on reader state
         let res;
         if (reader.state === "idle") {
@@ -509,7 +507,6 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       case "kokoro:setSpeed": {
-        console.log("[kokoro:setSpeed] setting speed", msg);
         const speed = Number(msg.speed) || 1.0;
         reader.settings.speed = speed;
         if (reader.audio) reader.audio.playbackRate = speed;
@@ -518,7 +515,6 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       case "kokoro:setVoice": {
-        console.log("[kokoro:setVoice] setting voice", msg);
         const voice = msg.voice || "af_heart";
         reader.settings.voice = voice;
         sendResponse({ ok: true });
@@ -526,7 +522,6 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       default:
-        console.log("[kokoro:unknown_message] unknown message", msg);
         sendResponse({ ok: false, error: "unknown_message" });
     }
   })();

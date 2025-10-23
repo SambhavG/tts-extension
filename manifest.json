@@ -12,7 +12,6 @@
     "scripting",
     "storage"
   ],
-  "host_permissions": [],
   "content_scripts": [
     {
       "matches": [

@@ -7,6 +7,15 @@
   outline-offset: 2px;
 }
 
+/* Orange highlight for content pending generation */
+.kokoro-tts-pending {
+  color: black !important;
+  background-color: orange !important;
+  transition: background-color 300ms ease-in-out;
+  outline: 2px dashed rgba(255, 165, 0, 0.8);
+  outline-offset: 2px;
+}
+
 /* Indicate interactivity on readable blocks */
 .kokoro-tts-clickable {
   cursor: pointer !important;

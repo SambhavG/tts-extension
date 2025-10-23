@@ -88,6 +88,7 @@ class Highlighter {
   clear() {
     if (this.prevEl) {
       this.prevEl.classList.remove("kokoro-tts-highlight");
+      this.prevEl.classList.remove("kokoro-tts-pending");
       this.prevEl = null;
     }
     if (this.prevWrapper && this.prevWrapper.parentNode) {
@@ -103,18 +104,46 @@ class Highlighter {
     if (!el) return;
     this.clear();
     if (text && typeof text === "string" && text.trim()) {
-      const res = this.wrapTextRange(el, text);
+      const res = this.wrapTextRange(el, text, "kokoro-tts-highlight");
       if (res && res.wrapper) {
         this.prevWrapper = res.wrapper;
-        res.wrapper.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        res.wrapper.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
         return;
       }
     }
     this.prevEl = el;
     el.classList.add("kokoro-tts-highlight");
-    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
   }
-  wrapTextRange(rootEl, targetText) {
+  // Pending (orange) highlight while generation is in progress
+  highlightPending(el, text) {
+    if (!el) return;
+    this.clear();
+    if (text && typeof text === "string" && text.trim()) {
+      const res = this.wrapTextRange(el, text, "kokoro-tts-pending");
+      if (res && res.wrapper) {
+        this.prevWrapper = res.wrapper;
+        res.wrapper.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        return;
+      }
+    }
+    this.prevEl = el;
+    el.classList.add("kokoro-tts-pending");
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  // Switch pending highlight to active (yellow)
+  activate() {
+    if (this.prevWrapper) {
+      this.prevWrapper.classList.remove("kokoro-tts-pending");
+      this.prevWrapper.classList.add("kokoro-tts-highlight");
+      return;
+    }
+    if (this.prevEl) {
+      this.prevEl.classList.remove("kokoro-tts-pending");
+      this.prevEl.classList.add("kokoro-tts-highlight");
+    }
+  }
+  wrapTextRange(rootEl, targetText, className = "kokoro-tts-highlight") {
     const tw = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
     const map = [];
     let norm = "";
@@ -147,7 +176,7 @@ class Highlighter {
     range.setStart(start.node, start.offset);
     range.setEnd(end.node, end.offset + 1);
     const span = document.createElement("span");
-    span.className = "kokoro-tts-highlight";
+    span.className = className;
     const contents = range.extractContents();
     span.appendChild(contents);
     range.insertNode(span);
@@ -174,7 +203,7 @@ const SIMPLE_INLINE_TAGS = new Set([
   "LABEL",
   "BUTTON",
 ]);
-const PREREAD_AHEAD = 2; // how many blocks ahead to pre-generate
+const PREREAD_AHEAD = 5; // how many blocks ahead to pre-generate
 function isVisible(el) {
   const rect = el.getBoundingClientRect();
   const style = getComputedStyle(el);
@@ -393,7 +422,7 @@ class KokoroReader {
 
       // Highlight current text within the element
       const currentEl = item.el && document.contains(item.el) ? item.el : resolveXPath(item.xpath);
-      this.highlighter.highlight(currentEl, item.text);
+      this.highlighter.highlightPending(currentEl, item.text);
 
       // Pre-generate next items while current is playing
       this.ensurePrefetch(i + 1);
@@ -408,6 +437,9 @@ class KokoroReader {
 
       if (signal.aborted) break;
 
+      // Activate highlight now that audio is ready
+      this.highlighter.activate();
+
       // Play
       const url = URL.createObjectURL(blob);
       await this.playUrl(url, signal);
@@ -415,11 +447,11 @@ class KokoroReader {
       if (signal.aborted) break;
 
       // Cleanup cache outside the useful window
-      const toDelete = [];
-      for (const [k] of this.audioCache) {
-        if (k < i || k > i + PREREAD_AHEAD) toDelete.push(k);
-      }
-      for (const k of toDelete) this.audioCache.delete(k);
+      // const toDelete = [];
+      // for (const [k] of this.audioCache) {
+      //   if (k < i || k > i + PREREAD_AHEAD) toDelete.push(k);
+      // }
+      // for (const k of toDelete) this.audioCache.delete(k);
     }
 
     // Only clear and reset if we completed naturally (not aborted)

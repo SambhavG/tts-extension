@@ -1,4 +1,4 @@
-vendor/
-node_modules/
+# vendor/
+# node_modules/
 .cursor/
 dist/

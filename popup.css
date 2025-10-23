@@ -399,6 +399,14 @@ footer small {
   animation-delay: 0.9s;
 }
 
+.wave-bar:nth-child(11) {
+  animation-delay: 1.0s;
+}
+
+.wave-bar:nth-child(12) {
+  animation-delay: 1.1s;
+}
+
 @keyframes sine-wave {
   0%, 100% {
     transform: scaleY(1);

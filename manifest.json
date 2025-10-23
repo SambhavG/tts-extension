@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Kokoro TTS Reader",
+  "name": "Local Reader: AI On Device Text-to-Speech",
   "version": "0.1.0",
-  "description": "Read web pages with Kokoro TTS and highlight the current text in yellow.",
+  "description": "Read websites aloud with an AI model running in your browser",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Kokoro TTS Reader"
+    "default_title": "Local Reader"
   },
   "permissions": [
     "activeTab",
@@ -51,7 +51,9 @@
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "128": "icons/icon128.png",
+    "256": "icons/icon256.png",
+    "512": "icons/icon512.png"
   },
   "background": {
     "service_worker": "background.js"

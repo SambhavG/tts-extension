@@ -21,6 +21,7 @@ function sendToActiveTab(message) {
   });
 }
 
+const $statusSection = document.getElementById("status-section");
 const $status = document.getElementById("status");
 const $voice = document.getElementById("voice");
 const $speed = document.getElementById("speed");
@@ -154,15 +155,20 @@ $speed.addEventListener("change", async () => {
 async function checkModelStatus() {
   const injected = await ensureInjected();
   if (!injected) {
-    $status.style.display = "none";
+    $statusSection.style.display = "none";
     return;
   }
 
   const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
   if (res?.loaded) {
-    $status.style.display = "none";
+    $statusSection.style.display = "none";
+  } else if (res?.cspError) {
+    $statusSection.style.display = "block";
+    $status.innerHTML = `
+      <span class="error-text">Failed to load, likely due to page's security policy</span>
+    `;
   } else {
-    $status.style.display = "flex";
+    $statusSection.style.display = "block";
     $status.innerHTML = `
       <span class="loading-text">Model is loading</span>
       <div class="sine-wave">

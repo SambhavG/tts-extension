@@ -6,13 +6,13 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <section class="row">
-      <span id='status'></span>
+    <section id="status-section" class="row">
+      <div id='status'></div>
     </section>
     <section class="row">
       <label for="voice">Voice</label>
       <select id="voice">
-        <option value="">(loading voices…)</option>
+        <option value="">loading...</option>
       </select>
     </section>
 
@@ -41,6 +41,11 @@
 
     <section class="buttons">
       <button id="read-button">Read</button>
+    </section>
+
+    <section class="row shortcuts">
+      <span>click text to read</span><br>
+      <span>alt+j forward alt+k back</span>
     </section>
 
     <script src="popup.js" type="module"></script>

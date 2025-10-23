@@ -4,6 +4,7 @@ let workerReady = null;
 let nextMsgId = 1;
 const pending = new Map();
 let initted = "not_started";
+let cspError = false;
 
 // You can change this if you use a different model by default
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
@@ -17,6 +18,7 @@ function ensureWorker() {
   worker = new Worker(url, { type: "module" });
   worker.onerror = (e) => {
     console.error("[ensureWorker] unable to create worker, likely due to page's CSP restrictions", e);
+    cspError = true;
     return null;
   };
   let resolveReady;
@@ -683,7 +685,9 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:getModelStatus": {
-        if (!worker || initted !== "done") {
+        if (cspError) {
+          sendResponse({ ok: true, loaded: false, cspError: true });
+        } else if (!worker || initted !== "done") {
           sendResponse({ ok: true, loaded: false });
         } else {
           const { loaded } = await callWorker({ type: "status" });

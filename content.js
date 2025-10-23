@@ -273,6 +273,7 @@ function collectTextContainers(root) {
 
 class KokoroReader {
   constructor() {
+    console.log("[KokoroReader] constructor");
     this.queue = [];
     this.idx = -1;
     this.audio = null;
@@ -550,7 +551,14 @@ class KokoroReader {
   }
 }
 
-const reader = new KokoroReader();
+let reader = null;
+
+function ensureReader() {
+  if (!reader) {
+    reader = new KokoroReader();
+  }
+  return reader;
+}
 
 // Messages from popup
 api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -562,12 +570,13 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "kokoro:getState": {
         // Report current reader state, settings, and position
-        const idx = typeof reader.idx === "number" ? reader.idx : -1;
-        const total = Array.isArray(reader.queue) ? reader.queue.length : 0;
+        const r = ensureReader();
+        const idx = typeof r.idx === "number" ? r.idx : -1;
+        const total = Array.isArray(r.queue) ? r.queue.length : 0;
         sendResponse({
           ok: true,
-          state: reader.state,
-          settings: reader.settings,
+          state: r.state,
+          settings: r.settings,
           index: idx,
           total: total,
         });
@@ -589,32 +598,36 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       case "kokoro:playButtonPressed": {
         // Switch on reader state
+        const r = ensureReader();
         let res;
-        if (reader.state === "idle") {
-          res = await reader.start(msg.settings || {});
-        } else if (reader.state === "playing") {
-          res = await reader.pause();
-        } else if (reader.state === "paused") {
-          res = await reader.resume();
+        if (r.state === "idle") {
+          res = await r.start(msg.settings || {});
+        } else if (r.state === "playing") {
+          res = await r.pause();
+        } else if (r.state === "paused") {
+          res = await r.resume();
         }
         sendResponse(res);
         break;
       }
       case "kokoro:setSpeed": {
+        const r = ensureReader();
         const speed = Number(msg.speed) || 1.0;
-        reader.settings.speed = speed;
-        if (reader.audio) reader.audio.playbackRate = speed;
+        r.settings.speed = speed;
+        if (r.audio) r.audio.playbackRate = speed;
         sendResponse({ ok: true });
         break;
       }
       case "kokoro:setVoice": {
+        const r = ensureReader();
         const voice = msg.voice || "af_heart";
-        reader.settings.voice = voice;
+        r.settings.voice = voice;
         sendResponse({ ok: true });
         break;
       }
       case "kokoro:clearCache": {
-        await reader.clearCache();
+        const r = ensureReader();
+        await r.clearCache();
         sendResponse({ ok: true });
         break;
       }
@@ -630,27 +643,28 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     if (msg?.type !== "kokoro:executeCommand") return;
+    const r = ensureReader();
     const command = msg?.command;
     if (command === "toggle-read") {
-      if (reader.state === "playing") await reader.pause();
-      else if (reader.state === "paused") await reader.resume();
-      else await reader.start({});
+      if (r.state === "playing") await r.pause();
+      else if (r.state === "paused") await r.resume();
+      else await r.start({});
       sendResponse({ ok: true });
     } else if (command === "stop-read") {
-      await reader.stop();
+      await r.stop();
       sendResponse({ ok: true });
     } else if (command === "jump-next") {
-      const currentIdx = reader.idx !== undefined ? reader.idx : -1;
+      const currentIdx = r.idx !== undefined ? r.idx : -1;
       const nextIdx = currentIdx + 1;
-      if (nextIdx < reader.queue.length) {
-        await reader.jumpTo(nextIdx);
+      if (nextIdx < r.queue.length) {
+        await r.jumpTo(nextIdx);
       }
       sendResponse({ ok: true });
     } else if (command === "jump-previous") {
-      const currentIdx = reader.idx !== undefined ? reader.idx : -1;
+      const currentIdx = r.idx !== undefined ? r.idx : -1;
       const prevIdx = currentIdx - 1;
       if (prevIdx >= 0) {
-        await reader.jumpTo(prevIdx);
+        await r.jumpTo(prevIdx);
       }
       sendResponse({ ok: true });
     } else {

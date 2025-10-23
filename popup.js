@@ -162,6 +162,11 @@ async function checkModelStatus() {
   const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
   if (res?.loaded) {
     $statusSection.style.display = "none";
+  } else if (res?.webgpuUnsupported) {
+    $statusSection.style.display = "block";
+    $status.innerHTML = `
+      <span class="error-text">WebGPU is not available - please enable graphics acceleration at chrome://settings/system</span>
+    `;
   } else if (res?.cspError) {
     $statusSection.style.display = "block";
     $status.innerHTML = `

@@ -5,6 +5,21 @@ let nextMsgId = 1;
 const pending = new Map();
 let initted = "not_started";
 let cspError = false;
+let webgpuUnsupported = !(typeof navigator !== "undefined" && navigator && navigator.gpu);
+let webgpuProbePromise = null;
+
+function probeWebGPU() {
+  if (webgpuProbePromise) return webgpuProbePromise;
+  webgpuProbePromise = (async () => {
+    if (!(typeof navigator !== "undefined" && navigator && navigator.gpu)) {
+      webgpuUnsupported = true;
+      return;
+    }
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) webgpuUnsupported = true;
+  })();
+  return webgpuProbePromise;
+}
 
 // You can change this if you use a different model by default
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
@@ -51,6 +66,8 @@ async function callWorker(message) {
 
 async function initTTS() {
   if (initted === "done") return;
+  await probeWebGPU();
+  if (webgpuUnsupported) return;
   initted = "initing";
   await callWorker({
     type: "init",
@@ -60,12 +77,16 @@ async function initTTS() {
 }
 
 async function listVoices() {
+  await probeWebGPU();
+  if (webgpuUnsupported) return [];
   await initTTS();
   const { voices } = await callWorker({ type: "voices" });
   return Array.isArray(voices) ? voices : [];
 }
 
 async function generateParagraphBlob(text, voice = "af_heart") {
+  await probeWebGPU();
+  if (webgpuUnsupported) return null;
   await initTTS();
   // Split on sentence boundaries so we stay under the model's max capacity
   const sentences = (text || "")
@@ -428,6 +449,11 @@ class KokoroReader {
     }
 
     this.settings = { ...this.settings, ...settings };
+    await probeWebGPU();
+    if (webgpuUnsupported) {
+      alert("WebGPU is not available in this browser/device.");
+      return { ok: false };
+    }
     await initTTS();
     await this.buildQueue();
 
@@ -678,7 +704,10 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:getModelStatus": {
-        if (cspError) {
+        await probeWebGPU();
+        if (webgpuUnsupported) {
+          sendResponse({ ok: true, loaded: false, webgpuUnsupported: true });
+        } else if (cspError) {
           sendResponse({ ok: true, loaded: false, cspError: true });
         } else if (!worker || initted !== "done") {
           sendResponse({ ok: true, loaded: false });
@@ -689,8 +718,13 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:listVoices": {
-        const voices = await listVoices();
-        sendResponse({ ok: true, voices });
+        await probeWebGPU();
+        if (webgpuUnsupported) {
+          sendResponse({ ok: false, error: "WebGPU not supported in this browser/device" });
+        } else {
+          const voices = await listVoices();
+          sendResponse({ ok: true, voices });
+        }
         break;
       }
       case "kokoro:playButtonPressed": {

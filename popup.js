@@ -31,7 +31,6 @@ async function ensureInjected() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return false;
 
-  // Quick ping to see if content script is listening
   const ping = await new Promise((resolve) => {
     api.tabs.sendMessage(tab.id, { type: "kokoro:ping" }, (res) => {
       if (api.runtime.lastError) resolve(null);
@@ -40,7 +39,6 @@ async function ensureInjected() {
   });
   if (ping?.ok) return true;
 
-  // Try injecting CSS and JS if not present
   await api.scripting.insertCSS({ target: { tabId: tab.id }, files: ["content.css"] });
   await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
 
@@ -105,8 +103,10 @@ async function refreshVoices() {
 async function initState() {
   const { kokoroSpeed = 1.0 } = await api.storage.sync.get(["kokoroSpeed"]);
   const { kokoroVoice = "af_heart" } = await api.storage.sync.get(["kokoroVoice"]);
-  const speedRes = await sendToActiveTab({ type: "kokoro:setSpeed", speed: kokoroSpeed });
-  const voiceRes = await sendToActiveTab({ type: "kokoro:setVoice", voice: kokoroVoice });
+  const injected = await ensureInjected();
+  if (!injected) return;
+  await sendToActiveTab({ type: "kokoro:setSpeed", speed: kokoroSpeed });
+  await sendToActiveTab({ type: "kokoro:setVoice", voice: kokoroVoice });
   initUIFromContentState();
 }
 
@@ -130,7 +130,6 @@ async function initUIFromContentState() {
 $readButton.addEventListener("click", async () => {
   const injected = await ensureInjected();
   if (!injected) return;
-
   await sendToActiveTab({ type: "kokoro:playButtonPressed" });
   initUIFromContentState();
 });

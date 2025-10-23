@@ -12,20 +12,7 @@
     "scripting",
     "storage"
   ],
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "css": [
-        "content.css"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
+  "host_permissions": [],
   "web_accessible_resources": [
     {
       "resources": [
@@ -36,7 +23,8 @@
         "vendor/kokoro-js.mjs"
       ],
       "matches": [
-        "<all_urls>"
+        "https://*/*",
+        "http://*/*"
       ]
     }
   ],

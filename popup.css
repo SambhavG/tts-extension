@@ -294,22 +294,22 @@ button:disabled {
 }
 
 /* Staggered animation delays for wave bars */
-.wave-bar:nth-child(1) { animation-delay: 0.05s; }
-.wave-bar:nth-child(2) { animation-delay: 0.1s; }
-.wave-bar:nth-child(3) { animation-delay: 0.15s; }
-.wave-bar:nth-child(4) { animation-delay: 0.2s; }
-.wave-bar:nth-child(5) { animation-delay: 0.25s; }
-.wave-bar:nth-child(6) { animation-delay: 0.3s; }
-.wave-bar:nth-child(7) { animation-delay: 0.35s; }
-.wave-bar:nth-child(8) { animation-delay: 0.4s; }
-.wave-bar:nth-child(9) { animation-delay: 0.45s; }
-.wave-bar:nth-child(10) { animation-delay: 0.5s; }
-.wave-bar:nth-child(11) { animation-delay: 0.55s; }
-.wave-bar:nth-child(12) { animation-delay: 0.6s; }
+.wave-bar:nth-child(1) { animation-delay: -0.0s; }
+.wave-bar:nth-child(2) { animation-delay: -0.05s; }
+.wave-bar:nth-child(3) { animation-delay: -0.10s; }
+.wave-bar:nth-child(4) { animation-delay: -0.15s; }
+.wave-bar:nth-child(5) { animation-delay: -0.20s; }
+.wave-bar:nth-child(6) { animation-delay: -0.25s; }
+.wave-bar:nth-child(7) { animation-delay: -0.30s; }
+.wave-bar:nth-child(8) { animation-delay: -0.35s; }
+.wave-bar:nth-child(9) { animation-delay: -0.40s; }
+.wave-bar:nth-child(10) { animation-delay: -0.45s; }
+.wave-bar:nth-child(11) { animation-delay: -0.50s; }
+.wave-bar:nth-child(12) { animation-delay: -0.55s; }
 
 @keyframes sine-wave {
   0%, 100% { transform: scaleY(1); }
-  25% { transform: scaleY(0.3); }
+  25% { transform: scaleY(math.sin(0.5)); }
   50% { transform: scaleY(0); }
-  75% { transform: scaleY(0.3); }
+  75% { transform: scaleY(math.sin(0.5)); }
 }

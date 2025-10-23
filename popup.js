@@ -187,7 +187,7 @@ async function checkModelStatus() {
       </div>
     `;
     // Check again in 500ms
-    setTimeout(checkModelStatus, 500);
+    setTimeout(checkModelStatus, 600);
   }
 }
 

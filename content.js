@@ -3,7 +3,7 @@ let worker = null;
 let workerReady = null;
 let nextMsgId = 1;
 const pending = new Map();
-let initted = false;
+let initted = "not_started";
 
 // You can change this if you use a different model by default
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
@@ -48,12 +48,13 @@ async function callWorker(message) {
 }
 
 async function initTTS() {
-  if (initted) return;
+  if (initted === "done") return;
+  initted = "initing";
   await callWorker({
     type: "init",
     payload: { modelId: MODEL_ID, dtype: "fp32", device: "webgpu" },
   });
-  initted = true;
+  initted = "done";
 }
 
 async function listVoices() {
@@ -173,7 +174,6 @@ const SIMPLE_INLINE_TAGS = new Set([
   "LABEL",
   "BUTTON",
 ]);
-const MIN_TEXT_LEN = 20; // minimum normalized text length for a block
 const PREREAD_AHEAD = 2; // how many blocks ahead to pre-generate
 function isVisible(el) {
   const rect = el.getBoundingClientRect();
@@ -212,7 +212,7 @@ function isCandidateTextContainer(el) {
   if (SKIP_TAGS.has(el.tagName)) return false;
   if (SIMPLE_INLINE_TAGS.has(el.tagName)) return false;
   const norm = normalizeTextContent(el);
-  if (norm.length < MIN_TEXT_LEN) return false;
+  if (norm.length === 0) return false;
   return true;
 }
 
@@ -281,6 +281,32 @@ class KokoroReader {
     this.state = "idle"; // idle | playing | paused
     this.abortController = null;
     this.audioCache = new Map();
+    this.buildQueue();
+  }
+
+  // State machine: centralized transition logic
+  setState(newState) {
+    const validTransitions = {
+      idle: ["playing"],
+      playing: ["paused", "idle", "playing"],
+      paused: ["playing", "idle"],
+    };
+    const allowed = validTransitions[this.state];
+    if (!allowed || !allowed.includes(newState)) {
+      console.warn(`[KokoroReader] Invalid state transition: ${this.state} -> ${newState}`);
+      return false;
+    }
+    this.state = newState;
+    return true;
+  }
+
+  // Ensure we're in a valid state for playback operations
+  ensurePlaybackState() {
+    if (this.state !== "playing" && this.state !== "paused") {
+      console.warn(`[KokoroReader] ensurePlaybackState: not in playback state (${this.state})`);
+      return false;
+    }
+    return true;
   }
 
   async buildQueue() {
@@ -301,13 +327,6 @@ class KokoroReader {
       el.addEventListener("click", () => {
         this.jumpTo(i);
       });
-      el.addEventListener("keydown", (e) => {
-        const key = e.key || e.code;
-        if (key === "Enter" || key === " ") {
-          e.preventDefault();
-          this.jumpTo(i);
-        }
-      });
       if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
       if (!el.hasAttribute("role")) el.setAttribute("role", "button");
     });
@@ -315,18 +334,30 @@ class KokoroReader {
   }
 
   async start(settings) {
+    // Stop any ongoing playback first
     if (this.state === "playing" || this.state === "paused") {
-      // restart with new settings
       await this.stop();
     }
+
     this.settings = { ...this.settings, ...settings };
     await initTTS();
     await this.buildQueue();
+
     if (!this.queue.length) {
       alert("No readable text found on this page.");
       return { ok: false };
     }
-    this.state = "playing";
+
+    // Ensure we're in idle state before starting
+    if (this.state !== "idle") {
+      console.warn(`[KokoroReader] start: not in idle state (${this.state})`);
+      return { ok: false };
+    }
+
+    if (!this.setState("playing")) {
+      return { ok: false };
+    }
+
     this.abortController = new AbortController();
     this.loop(this.abortController.signal, 0);
     return { ok: true };
@@ -334,17 +365,28 @@ class KokoroReader {
 
   ensurePrefetch(startIndex) {
     for (let j = startIndex; j < Math.min(this.queue.length, startIndex + PREREAD_AHEAD); j++) {
-      if (!this.audioCache.has(j)) {
-        const item = this.queue[j];
-        const p = generateParagraphBlob(item.text, this.settings.voice);
-        this.audioCache.set(j, p);
+      if (this.audioCache.has(j)) {
+        continue;
       }
+      this.audioCache.set(j, generateParagraphBlob(this.queue[j].text, this.settings.voice));
     }
   }
 
   async loop(signal, startIndex = 0) {
+    console.log("[loop] starting loop from index", startIndex);
+
     for (let i = Math.max(0, startIndex); i < this.queue.length; i++) {
-      if (signal.aborted) break;
+      if (signal.aborted) {
+        console.log("[loop] signal aborted at index", i);
+        break;
+      }
+
+      // Verify we're still in a valid playback state
+      if (!this.ensurePlaybackState()) {
+        console.log("[loop] invalid state, exiting");
+        break;
+      }
+      console.log("[loop] Reading ", i);
       this.idx = i;
       const item = this.queue[i];
 
@@ -379,19 +421,31 @@ class KokoroReader {
       for (const k of toDelete) this.audioCache.delete(k);
     }
 
-    this.highlighter.clear();
-    this.state = "idle";
-    this.idx = -1;
+    // Only clear and reset if we completed naturally (not aborted)
+    if (!signal.aborted) {
+      this.highlighter.clear();
+      this.setState("idle");
+      this.idx = -1;
+    }
   }
 
   async jumpTo(index) {
+    console.log("[jumpTo] jumping to index", index);
     if (!Array.isArray(this.queue) || index < 0 || index >= this.queue.length) {
       return { ok: false };
     }
-    if (this.abortController) this.abortController.abort();
+
+    // Abort current playback if active
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+
+    // Transition to playing state
+    if (!this.setState("playing")) {
+      return { ok: false };
+    }
+
     this.abortController = new AbortController();
-    this.audioCache = new Map();
-    this.state = "playing";
     this.loop(this.abortController.signal, index);
     return { ok: true };
   }
@@ -424,33 +478,74 @@ class KokoroReader {
   }
 
   async pause() {
-    if (this.state !== "playing") return { ok: false };
-    this.state = "paused";
-    if (this.audio) this.audio.pause();
+    if (this.state !== "playing") {
+      return { ok: false };
+    }
+
+    if (!this.setState("paused")) {
+      return { ok: false };
+    }
+
+    if (this.audio) {
+      this.audio.pause();
+    }
+
     // native synthesis pause (best effort)
-    if ("speechSynthesis" in window) window.speechSynthesis.pause?.();
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.pause?.();
+    }
+
     return { ok: true };
   }
 
   async resume() {
-    if (this.state !== "paused") return { ok: false };
-    this.state = "playing";
-    if (this.audio) await this.audio.play();
-    if ("speechSynthesis" in window) window.speechSynthesis.resume?.();
+    if (this.state !== "paused") {
+      return { ok: false };
+    }
+
+    if (!this.setState("playing")) {
+      return { ok: false };
+    }
+
+    if (this.audio) {
+      await this.audio.play();
+    }
+
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.resume?.();
+    }
+
     return { ok: true };
   }
 
   async stop() {
-    if (this.abortController) this.abortController.abort();
-    this.abortController = null;
+    // Abort current playback
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    // Clean up audio
     if (this.audio) {
       this.audio.pause();
       URL.revokeObjectURL(this.audio.src);
       this.audio = null;
     }
+
+    // Clear highlighting
     this.highlighter.clear();
-    this.state = "idle";
+
+    // Transition to idle
+    this.setState("idle");
     this.idx = -1;
+
+    return { ok: true };
+  }
+
+  async clearCache() {
+    // Called when the user changes the voice (need to regen with new voice)
+    await this.stop();
+    this.audioCache.clear();
     return { ok: true };
   }
 }
@@ -479,7 +574,7 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       }
       case "kokoro:getModelStatus": {
-        if (!worker || !initted) {
+        if (!worker || initted !== "done") {
           sendResponse({ ok: true, loaded: false });
         } else {
           const { loaded } = await callWorker({ type: "status" });
@@ -505,7 +600,6 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse(res);
         break;
       }
-
       case "kokoro:setSpeed": {
         const speed = Number(msg.speed) || 1.0;
         reader.settings.speed = speed;
@@ -513,14 +607,17 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
-
       case "kokoro:setVoice": {
         const voice = msg.voice || "af_heart";
         reader.settings.voice = voice;
         sendResponse({ ok: true });
         break;
       }
-
+      case "kokoro:clearCache": {
+        await reader.clearCache();
+        sendResponse({ ok: true });
+        break;
+      }
       default:
         sendResponse({ ok: false, error: "unknown_message" });
     }

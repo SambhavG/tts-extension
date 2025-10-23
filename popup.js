@@ -138,6 +138,7 @@ $voice.addEventListener("change", async () => {
   const v = $voice.value || "";
   await api.storage.sync.set({ kokoroVoice: v });
   await sendToActiveTab({ type: "kokoro:setVoice", voice: v });
+  await sendToActiveTab({ type: "kokoro:clearCache" });
   await initUIFromContentState();
 });
 

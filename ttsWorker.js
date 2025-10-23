@@ -2,9 +2,23 @@
 // This is adapted from the TypeScript version for use in the extension
 
 let ttsInstance = null;
+let started_init = false;
 
 async function initTTS(modelId, dtype, device) {
   if (ttsInstance) return;
+  if (started_init) {
+    // Wait for ttsInstance to be not null via awaiting a promise that resolves when it is not null
+    await new Promise((resolve) => {
+      const interval = setInterval(() => {
+        if (ttsInstance) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 100);
+    });
+    return;
+  }
+  started_init = true;
 
   const { KokoroTTS } = await import(new URL("./vendor/kokoro-js.mjs", import.meta.url));
 
@@ -81,7 +95,8 @@ async function generateAudio(text, voice) {
 
 // Generate a single gapless WAV by synthesizing each sentence and concatenating PCM
 async function generateBatch(sentences, voice) {
-  console.log("[generateBatch] sentences", sentences);
+  console.log("[generateBatch] starting generateBatch", sentences, voice);
+  await initTTS();
   if (!Array.isArray(sentences) || sentences.length === 0) {
     sentences = [""];
   }

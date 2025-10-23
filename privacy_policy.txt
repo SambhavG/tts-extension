@@ -1,0 +1,3 @@
+Privacy Policy
+
+Local Reader does not collect, store, or share any personal data. All text-to-speech processing happens locally in your browser using an on-device AI model. No information is sent to external servers or third parties.

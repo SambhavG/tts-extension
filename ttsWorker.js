@@ -26,7 +26,6 @@ async function initTTS(modelId, dtype, device) {
     dtype: dtype || "fp32",
     device: device || "webgpu",
   });
-  console.log("[initTTS] KokoroTTS.from_pretrained done", ttsInstance);
   return;
 }
 
@@ -95,7 +94,6 @@ async function generateAudio(text, voice) {
 
 // Generate a single gapless WAV by synthesizing each sentence and concatenating PCM
 async function generateBatch(sentences, voice) {
-  console.log("[generateBatch] starting generateBatch", sentences, voice);
   await initTTS();
   if (!Array.isArray(sentences) || sentences.length === 0) {
     sentences = [""];

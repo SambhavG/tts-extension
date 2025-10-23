@@ -304,7 +304,6 @@ function collectTextContainers(root) {
 
 class KokoroReader {
   constructor() {
-    console.log("[KokoroReader] constructor");
     this.queue = [];
     this.idx = -1;
     this.audio = null;
@@ -463,20 +462,15 @@ class KokoroReader {
   }
 
   async loop(signal, startIndex = 0) {
-    console.log("[loop] starting loop from index", startIndex);
-
     for (let i = Math.max(0, startIndex); i < this.queue.length; i++) {
       if (signal.aborted) {
-        console.log("[loop] signal aborted at index", i);
         break;
       }
 
       // Verify we're still in a valid playback state
       if (!this.ensurePlaybackState()) {
-        console.log("[loop] invalid state, exiting");
         break;
       }
-      console.log("[loop] Reading ", i);
       this.idx = i;
       const item = this.queue[i];
 
@@ -523,7 +517,6 @@ class KokoroReader {
   }
 
   async jumpTo(index) {
-    console.log("[jumpTo] jumping to index", index);
     if (!Array.isArray(this.queue) || index < 0 || index >= this.queue.length) {
       return { ok: false };
     }

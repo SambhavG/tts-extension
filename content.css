@@ -2,7 +2,7 @@
 .kokoro-tts-highlight {
   color: black !important;
   background-color: yellow !important;
-  transition: background-color 1000ms ease-in-out;
+  transition: background-color 300ms ease-in-out;
   outline: 2px solid rgba(255, 208, 0, 0.8);
   outline-offset: 2px;
 }

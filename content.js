@@ -311,6 +311,7 @@ class KokoroReader {
     this.state = "idle"; // idle | playing | paused
     this.abortController = null;
     this.audioCache = new Map();
+    this.generatedLRU = new Map(); // index -> true, Map order is LRU (oldest -> newest)
     this.buildQueue();
   }
 
@@ -375,6 +376,8 @@ class KokoroReader {
     const item = this.queue[index];
     if (!item) return null;
     if (item.genStatus === "generated") {
+      // Access bumps LRU priority
+      this.bumpLRU(index);
       return Promise.resolve(item.blob);
     }
     if (item.genStatus === "generating" && item.genPromise) {
@@ -386,10 +389,35 @@ class KokoroReader {
       const blob = await generateParagraphBlob(item.text, this.settings.voice);
       item.blob = blob;
       item.genStatus = "generated";
+      // On generation completion, bump LRU and evict if needed
+      this.bumpLRU(index);
+      this.evictIfNeeded();
       return blob;
     })();
     item.genPromise = p;
     return p;
+  }
+
+  // LRU helpers: bump on access or generation, keep only 30 most recent generated items
+  bumpLRU(index) {
+    // Only track items that are actually generated
+    const item = this.queue[index];
+    if (!item || item.genStatus !== "generated") return;
+    if (this.generatedLRU.has(index)) this.generatedLRU.delete(index);
+    this.generatedLRU.set(index, true);
+  }
+
+  evictIfNeeded() {
+    while (this.generatedLRU.size > 30) {
+      const oldestKey = this.generatedLRU.keys().next().value;
+      this.generatedLRU.delete(oldestKey);
+      const it = this.queue[oldestKey];
+      if (it) {
+        it.blob = null;
+        it.genPromise = null;
+        it.genStatus = "not_generated";
+      }
+    }
   }
 
   async start(settings) {
@@ -456,6 +484,10 @@ class KokoroReader {
 
       // Generate or reuse TTS for current via stateful helper
       const blob = await this.generateForIndex(i);
+
+      // Playback counts as access; bump priority and evict if needed
+      this.bumpLRU(i);
+      this.evictIfNeeded();
 
       if (signal.aborted) break;
 
@@ -614,6 +646,7 @@ class KokoroReader {
         item.blob = null;
       }
     }
+    this.generatedLRU.clear();
     return { ok: true };
   }
 }

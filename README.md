@@ -4,7 +4,8 @@ A chrome extension wrapping kokoro-js to generate on-device TTS for webpages, wi
 
 
 ## Build locally:
+Will build to dist/ and make a zip file tts_extension.zip
 ```bash
 npm i
-zip -r ./dist/tts_extension.zip . -x "./.gitignore" "./.cursorrules" "./dist/*"
+npm run build
 ```

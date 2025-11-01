@@ -20,7 +20,10 @@
         "*.onnx",
         "icons/*",
         "ttsWorker.js",
-        "vendor/kokoro-js.mjs"
+        "kokoro.js",
+        "node_modules/kokoro-js/dist/kokoro.js",
+        "vendor/kokoro-js.mjs",
+        "kokoro-js.mjs"
       ],
       "matches": [
         "https://*/*",

@@ -20,7 +20,7 @@ async function initTTS(modelId, dtype, device) {
   }
   started_init = true;
 
-  const { KokoroTTS } = await import(new URL("./vendor/kokoro-js.mjs", import.meta.url));
+  const { KokoroTTS } = await import(new URL("./kokoro-js.mjs", import.meta.url));
 
   ttsInstance = await KokoroTTS.from_pretrained(modelId, {
     dtype: dtype || "fp32",

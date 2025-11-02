@@ -5,6 +5,7 @@ import path from "node:path";
 export default defineConfig({
   publicDir: false,
   build: {
+    minify: false,
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,

@@ -37,7 +37,8 @@
     "512": "icons/icon-512.png"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "commands": {
     "toggle-read": {
@@ -66,7 +67,7 @@
     }
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'; connect-src 'self' https://huggingface.co https://cdn-lfs.huggingface.co https://cdn.jsdelivr.net data:"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'; connect-src 'self' https://huggingface.co https://cdn-lfs.huggingface.co https://cdn.jsdelivr.net https://cas-bridge.xethub.hf.co data:"
   },
   "browser_specific_settings": {
     "gecko": {

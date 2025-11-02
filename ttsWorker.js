@@ -1,5 +1,6 @@
 // TTS Worker implementation using kokoro-js
 // This is adapted from the TypeScript version for use in the extension
+import { KokoroTTS } from "kokoro-js";
 
 let ttsInstance = null;
 let started_init = false;
@@ -19,8 +20,6 @@ async function initTTS(modelId, dtype, device) {
     return;
   }
   started_init = true;
-
-  const { KokoroTTS } = await import(new URL("./kokoro-js.mjs", import.meta.url));
 
   ttsInstance = await KokoroTTS.from_pretrained(modelId, {
     dtype: dtype || "fp32",

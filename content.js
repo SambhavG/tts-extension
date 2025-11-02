@@ -1,10 +1,5 @@
 // TTS Engine functions (inlined from ttsEngine.js)
-let worker = null;
-let workerReady = null;
-let nextMsgId = 1;
-const pending = new Map();
 let initted = "not_started";
-let cspError = false;
 let webgpuUnsupported = !(typeof navigator !== "undefined" && navigator && navigator.gpu);
 let webgpuProbePromise = null;
 
@@ -24,43 +19,11 @@ function probeWebGPU() {
 // You can change this if you use a different model by default
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
-function ensureWorker() {
-  if (worker) return worker;
-  const workerUrl = chrome.runtime.getURL("ttsWorker.js");
-  const bootstrap = `import('${workerUrl}').then(() => self.postMessage({ type: 'ready' }));`;
-  const blob = new Blob([bootstrap], { type: "text/javascript" });
-  const url = URL.createObjectURL(blob);
-  worker = new Worker(url, { type: "module" });
-  worker.onerror = (e) => {
-    console.error("[ensureWorker] unable to create worker, likely due to page's CSP restrictions", e);
-    cspError = true;
-    return null;
-  };
-  let resolveReady;
-  workerReady = new Promise((r) => (resolveReady = r));
-  worker.addEventListener("message", (e) => {
-    const data = e.data || {};
-    if (data && data.type === "ready") {
-      resolveReady?.();
-      return;
-    }
-    const { id, ok } = data;
-    if (typeof id !== "number") return;
-    const p = pending.get(id);
-    if (!p) return;
-    pending.delete(id);
-    if (ok) p.resolve(data);
-  });
-  return worker;
-}
-
-async function callWorker(message) {
-  ensureWorker();
-  if (workerReady) await workerReady;
-  return new Promise((resolve, reject) => {
-    const id = nextMsgId++;
-    pending.set(id, { resolve, reject });
-    worker.postMessage({ id, ...message });
+async function callBackground(message) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ scope: "kokoro-tts", type: message.type, payload: message.payload }, (response) => {
+      resolve(response || {});
+    });
   });
 }
 
@@ -69,7 +32,7 @@ async function initTTS() {
   await probeWebGPU();
   if (webgpuUnsupported) return;
   initted = "initing";
-  await callWorker({
+  await callBackground({
     type: "init",
     payload: { modelId: MODEL_ID, dtype: "fp32", device: "webgpu" },
   });
@@ -80,7 +43,7 @@ async function listVoices() {
   await probeWebGPU();
   if (webgpuUnsupported) return [];
   await initTTS();
-  const { voices } = await callWorker({ type: "voices" });
+  const { voices } = await callBackground({ type: "voices" });
   return Array.isArray(voices) ? voices : [];
 }
 
@@ -90,14 +53,24 @@ async function generateParagraphBlob(text, voice = "af_heart") {
   await initTTS();
   // Split on sentence boundaries so we stay under the model's max capacity
   const sentences = (text || "")
-    .split(/(?<=[\.!\?…])\s+(?=[A-Z0-9“"(\[])|(?<=\n)\s*/g)
+    .split(/(?<=[\.\!?…])\s+(?=[A-Z0-9“"(\[])|(?<=\n)\s*/g)
     .map((s) => s.trim())
     .filter(Boolean);
-  const { audioWav } = await callWorker({
+  const { audioWav } = await callBackground({
     type: "generateBatch",
     payload: { sentences: sentences.length ? sentences : [text], voice },
   });
-  return new Blob([audioWav], { type: "audio/wav" });
+  let wavBuffer;
+  if (audioWav instanceof ArrayBuffer) {
+    wavBuffer = audioWav;
+  } else if (Array.isArray(audioWav)) {
+    wavBuffer = new Uint8Array(audioWav).buffer;
+  } else if (audioWav && ArrayBuffer.isView(audioWav) && audioWav.buffer instanceof ArrayBuffer) {
+    wavBuffer = audioWav.buffer;
+  } else {
+    wavBuffer = new ArrayBuffer(0);
+  }
+  return new Blob([wavBuffer], { type: "audio/wav" });
 }
 
 const api = chrome; // Firefox aliases chrome to browser
@@ -334,6 +307,13 @@ class KokoroReader {
     this.abortController = null;
     this.audioCache = new Map();
     this.generatedLRU = new Map(); // index -> true, Map order is LRU (oldest -> newest)
+    this.audioContext = null;
+    this.webAudioState = null;
+    this.currentPlaybackMode = null;
+    this.currentPlaybackCleanup = null;
+    this.forceWebAudio = false;
+    this._stretchWindow = null;
+    this._stretchWindowSize = 0;
     this.buildQueue();
   }
 
@@ -517,8 +497,7 @@ class KokoroReader {
       this.highlighter.activate();
 
       // Play
-      const url = URL.createObjectURL(blob);
-      let playPromise = this.playUrl(url, signal);
+      let playPromise = this.playBlob(blob, signal);
       // Pre-generate next items while current is playing
       // Kick off prefetch without awaiting it; only await playback
       this.ensurePrefetch(i + 1);
@@ -562,31 +541,289 @@ class KokoroReader {
     return { ok: true };
   }
 
-  playUrl(url, signal) {
-    return new Promise((resolve, reject) => {
-      // Clean up previous element if any
-      if (this.audio) {
-        this.audio.pause();
-        URL.revokeObjectURL(this.audio.src);
+  ensureAudioContext() {
+    if (this.audioContext) return this.audioContext;
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return null;
+    this.audioContext = new AudioContextCtor();
+    return this.audioContext;
+  }
+
+  getStretchWindow(size) {
+    if (this._stretchWindow && this._stretchWindowSize === size) {
+      return this._stretchWindow;
+    }
+    const win = new Float32Array(size);
+    const denom = size - 1 || 1;
+    for (let i = 0; i < size; i++) {
+      win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / denom);
+    }
+    this._stretchWindow = win;
+    this._stretchWindowSize = size;
+    return win;
+  }
+
+  timeStretchPCM(input, tempo) {
+    if (!input || input.length === 0) {
+      return new Float32Array(0);
+    }
+    const clampedTempo = Math.max(0.1, Math.min(tempo, 4.0));
+    if (Math.abs(clampedTempo - 1) < 0.01) {
+      return input.slice();
+    }
+    const windowSize = 2048;
+    const halfWindow = windowSize >> 1;
+    const stepIn = halfWindow;
+    const stepOut = Math.max(1, Math.round(halfWindow / clampedTempo));
+    const estimated = Math.ceil(input.length / clampedTempo) + windowSize * 2;
+    let output = new Float32Array(estimated);
+    let weight = new Float32Array(estimated);
+    const window = this.getStretchWindow(windowSize);
+
+    let inPos = 0;
+    let outPos = 0;
+
+    while (inPos + windowSize <= input.length) {
+      if (outPos + windowSize >= output.length) {
+        const newLength = output.length + windowSize * 4;
+        const newOutput = new Float32Array(newLength);
+        newOutput.set(output);
+        output = newOutput;
+        const newWeight = new Float32Array(newLength);
+        newWeight.set(weight);
+        weight = newWeight;
       }
+      for (let i = 0; i < windowSize; i++) {
+        const outIndex = outPos + i;
+        const sample = input[inPos + i] * window[i];
+        output[outIndex] += sample;
+        weight[outIndex] += window[i];
+      }
+      inPos += stepIn;
+      outPos += stepOut;
+    }
+
+    const remaining = input.length - inPos;
+    if (remaining > 0) {
+      if (outPos + remaining >= output.length) {
+        const newLength = output.length + windowSize * 4;
+        const newOutput = new Float32Array(newLength);
+        newOutput.set(output);
+        output = newOutput;
+        const newWeight = new Float32Array(newLength);
+        newWeight.set(weight);
+        weight = newWeight;
+      }
+      for (let i = 0; i < remaining; i++) {
+        const outIndex = outPos + i;
+        output[outIndex] += input[inPos + i];
+        weight[outIndex] += 1;
+      }
+      outPos += remaining;
+    }
+
+    const limit = Math.min(output.length, outPos + windowSize);
+    const result = new Float32Array(limit);
+    for (let i = 0; i < limit; i++) {
+      const w = weight[i];
+      result[i] = w > 1e-5 ? output[i] / w : output[i];
+    }
+    return result;
+  }
+
+  async playBlob(blob, signal) {
+    if (!this.forceWebAudio) {
+      const result = await this.playWithHtmlAudio(blob, signal);
+      if (result && result.success) {
+        return;
+      }
+      this.forceWebAudio = true;
+    }
+    const played = await this.playWithWebAudio(blob, signal);
+    if (!played) {
+      console.warn("[KokoroReader] Unable to play audio via Web Audio API.");
+    }
+  }
+
+  playWithHtmlAudio(blob, signal) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(blob);
       const audio = document.createElement("audio");
       audio.src = url;
       audio.preload = "metadata";
       const rate = this.settings?.speed || 1.0;
       audio.defaultPlaybackRate = rate;
       audio.playbackRate = rate;
-      audio.addEventListener("ended", resolve, { once: true });
 
-      // Pause handling
+      let finished = false;
+      const cleanup = () => {
+        audio.removeEventListener("ended", onEnded);
+        audio.removeEventListener("error", onError);
+        signal.removeEventListener("abort", onAbort);
+        if (this.audio === audio) {
+          this.audio = null;
+        }
+        if (this.currentPlaybackCleanup === cleanupPlayback) {
+          this.currentPlaybackCleanup = null;
+          this.currentPlaybackMode = null;
+        }
+        URL.revokeObjectURL(url);
+      };
+
+      const finalize = (result) => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve(result);
+      };
+
+      const cleanupPlayback = () => {
+        if (finished) return;
+        audio.pause();
+        cleanup();
+      };
+
+      const onEnded = () => finalize({ success: true });
+      const onError = () => finalize({ success: false });
       const onAbort = () => {
         audio.pause();
-        resolve(); // treat abort as clean resolve to unwind loop
+        finalize({ success: true });
       };
+
+      audio.addEventListener("ended", onEnded, { once: true });
+      audio.addEventListener("error", onError, { once: true });
       signal.addEventListener("abort", onAbort, { once: true });
 
       this.audio = audio;
-      audio.play();
+      this.currentPlaybackMode = "html";
+      this.currentPlaybackCleanup = cleanupPlayback;
+
+      const playResult = audio.play();
+      if (playResult && typeof playResult.catch === "function") {
+        playResult.catch(() => onError());
+      }
     });
+  }
+
+  async playWithWebAudio(blob, signal) {
+    let ctx = this.ensureAudioContext();
+    if (!ctx) {
+      return false;
+    }
+    if (ctx.state === "closed") {
+      this.audioContext = null;
+      ctx = this.ensureAudioContext();
+      if (!ctx) {
+        return false;
+      }
+    }
+    if (ctx.state === "suspended") {
+      await ctx.resume();
+    }
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const originalBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    const tempo = Math.max(0.1, Math.min(this.settings?.speed || 1.0, 4.0));
+
+    let processedBuffer = originalBuffer;
+    if (Math.abs(tempo - 1) > 0.01) {
+      const channelCount = originalBuffer.numberOfChannels;
+      const stretchedChannels = [];
+      let maxLength = 0;
+      for (let ch = 0; ch < channelCount; ch++) {
+        const channelData = originalBuffer.getChannelData(ch);
+        const stretched = this.timeStretchPCM(channelData, tempo);
+        stretchedChannels.push(stretched);
+        if (stretched.length > maxLength) {
+          maxLength = stretched.length;
+        }
+      }
+      processedBuffer = ctx.createBuffer(channelCount, maxLength, originalBuffer.sampleRate);
+      for (let ch = 0; ch < channelCount; ch++) {
+        const target = processedBuffer.getChannelData(ch);
+        const src = stretchedChannels[ch];
+        target.set(src);
+      }
+    }
+
+    return new Promise((resolve) => {
+      const source = ctx.createBufferSource();
+      source.buffer = processedBuffer;
+      source.playbackRate.value = 1.0;
+      source.connect(ctx.destination);
+
+      const state = {
+        ctx,
+        source,
+        cleaned: false,
+        onAbort: null,
+      };
+
+      let finished = false;
+      const resolveOnce = () => {
+        if (finished) return;
+        finished = true;
+        resolve(true);
+      };
+
+      const cleanup = (stopSource = true) => {
+        if (state.cleaned) return;
+        state.cleaned = true;
+        if (state.onAbort) {
+          signal.removeEventListener("abort", state.onAbort);
+          state.onAbort = null;
+        }
+        source.onended = null;
+        if (stopSource) {
+          source.stop();
+        }
+        source.disconnect();
+        this.webAudioState = null;
+        if (this.currentPlaybackCleanup === cleanupWrapper) {
+          this.currentPlaybackCleanup = null;
+          this.currentPlaybackMode = null;
+        }
+      };
+
+      const cleanupWrapper = (stopSource = true) => {
+        cleanup(stopSource);
+      };
+
+      const onAbort = () => {
+        cleanup();
+        resolveOnce();
+      };
+
+      state.onAbort = onAbort;
+      signal.addEventListener("abort", onAbort, { once: true });
+
+      this.webAudioState = { ctx };
+      this.currentPlaybackMode = "webaudio";
+      this.currentPlaybackCleanup = cleanupWrapper;
+
+      source.onended = () => {
+        cleanup(false);
+        resolveOnce();
+      };
+
+      source.start();
+    });
+  }
+
+  async pauseWebAudio() {
+    const state = this.webAudioState;
+    if (!state || !state.ctx) return false;
+    if (state.ctx.state === "suspended") return true;
+    await state.ctx.suspend();
+    return true;
+  }
+
+  async resumeWebAudio() {
+    const state = this.webAudioState;
+    if (!state || !state.ctx) return false;
+    if (state.ctx.state === "running") return true;
+    await state.ctx.resume();
+    return true;
   }
 
   async pause() {
@@ -600,6 +837,8 @@ class KokoroReader {
 
     if (this.audio) {
       this.audio.pause();
+    } else if (this.currentPlaybackMode === "webaudio") {
+      await this.pauseWebAudio();
     }
 
     // native synthesis pause (best effort)
@@ -621,6 +860,8 @@ class KokoroReader {
 
     if (this.audio) {
       await this.audio.play();
+    } else if (this.currentPlaybackMode === "webaudio") {
+      await this.resumeWebAudio();
     }
 
     if ("speechSynthesis" in window) {
@@ -638,11 +879,13 @@ class KokoroReader {
     }
 
     // Clean up audio
-    if (this.audio) {
-      this.audio.pause();
-      URL.revokeObjectURL(this.audio.src);
-      this.audio = null;
+    if (this.currentPlaybackCleanup) {
+      this.currentPlaybackCleanup();
+      this.currentPlaybackCleanup = null;
     }
+    this.audio = null;
+    this.webAudioState = null;
+    this.currentPlaybackMode = null;
 
     // Clear highlighting
     this.highlighter.clear();
@@ -707,12 +950,10 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await probeWebGPU();
         if (webgpuUnsupported) {
           sendResponse({ ok: true, loaded: false, webgpuUnsupported: true });
-        } else if (cspError) {
-          sendResponse({ ok: true, loaded: false, cspError: true });
-        } else if (!worker || initted !== "done") {
+        } else if (initted !== "done") {
           sendResponse({ ok: true, loaded: false });
         } else {
-          const { loaded } = await callWorker({ type: "status" });
+          const { loaded } = await callBackground({ type: "status" });
           sendResponse({ ok: true, loaded });
         }
         break;

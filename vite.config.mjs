@@ -16,7 +16,6 @@ export default defineConfig({
         content: path.resolve(process.cwd(), "content.js"),
         popup: path.resolve(process.cwd(), "popup.html"),
         popupJs: path.resolve(process.cwd(), "popup.js"),
-        ttsWorker: path.resolve(process.cwd(), "ttsWorker.js"),
         popupCss: path.resolve(process.cwd(), "popup.css"),
       },
       output: {
@@ -36,7 +35,6 @@ export default defineConfig({
         { src: "privacy_policy.txt", dest: "" },
         { src: "LICENSE", dest: "" },
         { src: "README.md", dest: "" },
-        { src: "vendor", dest: "" },
         // Keep exact filenames used by runtime injection
         { src: "content.css", dest: "" },
         // Manifest must be JSON in the root

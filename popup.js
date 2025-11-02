@@ -160,21 +160,19 @@ async function checkModelStatus() {
 
   const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
   if (res?.loaded) {
-    $statusSection.style.display = "none";
+    $readButton.innerHTML = `
+      <span class="read-text">read</span>
+      `;
   } else if (res?.webgpuUnsupported) {
-    $statusSection.style.display = "block";
-    $status.innerHTML = `
+    $readButton.innerHTML = `
       <span class="error-text">WebGPU is not available - please enable graphics acceleration at chrome://settings/system</span>
     `;
   } else if (res?.cspError) {
-    $statusSection.style.display = "block";
-    $status.innerHTML = `
+    $readButton.innerHTML = `
       <span class="error-text">Failed to load, likely due to page's security policy</span>
     `;
   } else {
-    $statusSection.style.display = "block";
-    $status.innerHTML = `
-      <span class="loading-text">Model is loading</span>
+    $readButton.innerHTML = `
       <div class="sine-wave">
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>

@@ -184,20 +184,34 @@ class Highlighter {
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG", "CANVAS", "VIDEO", "AUDIO"]);
 const SIMPLE_INLINE_TAGS = new Set([
   "A",
+  "ABBR",
   "B",
-  "I",
+  "BDI",
+  "BDO",
+  "BUTTON",
+  "CITE",
+  "CODE",
+  "DATA",
+  "DEL",
+  "DFN",
   "EM",
-  "STRONG",
-  "U",
+  "I",
+  "INS",
+  "KBD",
+  "LABEL",
+  "MARK",
+  "Q",
+  "S",
+  "SAMP",
   "SMALL",
+  "SPAN",
+  "STRONG",
   "SUB",
   "SUP",
-  "CODE",
-  "KBD",
-  "SAMP",
-  "MARK",
-  "LABEL",
-  "BUTTON",
+  "TIME",
+  "U",
+  "VAR",
+  "WBR",
 ]);
 const PREREAD_AHEAD = 5; // how many blocks ahead to pre-generate
 function isVisible(el) {
@@ -231,14 +245,18 @@ function normalizeTextContent(el) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function isCandidateTextContainer(el) {
-  if (!(el instanceof HTMLElement)) return false;
-  if (!isVisible(el)) return false;
-  if (SKIP_TAGS.has(el.tagName)) return false;
-  if (SIMPLE_INLINE_TAGS.has(el.tagName)) return false;
-  const norm = normalizeTextContent(el);
-  if (norm.length === 0) return false;
-  return true;
+function getCandidateTextMeta(el) {
+  if (!(el instanceof HTMLElement)) return null;
+  if (SKIP_TAGS.has(el.tagName)) return null;
+  if (!isVisible(el)) return null;
+  if (SIMPLE_INLINE_TAGS.has(el.tagName)) return null;
+  const text = normalizeTextContent(el);
+  if (text.length === 0) return null;
+  return {
+    el,
+    text,
+    isBlock: isReadableBlock(el),
+  };
 }
 
 function isAncestorOf(a, b) {
@@ -278,22 +296,28 @@ function chooseRoot() {
 }
 
 function collectTextContainers(root) {
-  const all = [];
+  const metaList = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
-  let n;
-  while ((n = walker.nextNode())) {
-    if (!(n instanceof HTMLElement)) continue;
-    if (!isCandidateTextContainer(n)) continue;
-    all.push(n);
+  let node;
+  while ((node = walker.nextNode())) {
+    const meta = getCandidateTextMeta(node);
+    if (!meta) continue;
+    metaList.push(meta);
   }
-  const set = new Set(all);
-  const lowest = all.filter((el) => {
-    for (const other of set) {
-      if (other !== el && isAncestorOf(el, other)) return false;
+
+  const blockMeta = metaList.filter((m) => m.isBlock);
+  const pool = blockMeta.length ? blockMeta : metaList;
+
+  const keep = pool.filter((meta, idx) => {
+    for (let i = 0; i < pool.length; i++) {
+      if (i === idx) continue;
+      const other = pool[i];
+      if (isAncestorOf(meta.el, other.el)) return false;
     }
     return true;
   });
-  return lowest.map((el) => ({ xpath: generateXPath(el), el, text: normalizeTextContent(el) }));
+
+  return keep.map((meta) => ({ xpath: generateXPath(meta.el), el: meta.el, text: meta.text }));
 }
 
 class KokoroReader {

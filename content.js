@@ -18,6 +18,7 @@ function probeWebGPU() {
 
 // You can change this if you use a different model by default
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const DEFAULT_SETTINGS = Object.freeze({ voice: "af_heart", speed: 1.0 });
 
 async function callBackground(message) {
   return new Promise((resolve) => {
@@ -324,21 +325,119 @@ class KokoroReader {
   constructor() {
     this.queue = [];
     this.idx = -1;
-    this.audio = null;
     this.highlighter = new Highlighter();
-    this.settings = { voice: "af_heart", speed: 1.0 };
+    this.settings = { ...DEFAULT_SETTINGS };
     this.state = "idle"; // idle | playing | paused
-    this.abortController = null;
-    this.audioCache = new Map();
     this.generatedLRU = new Map(); // index -> true, Map order is LRU (oldest -> newest)
     this.audioContext = null;
-    this.webAudioState = null;
-    this.currentPlaybackMode = null;
-    this.currentPlaybackCleanup = null;
+    this.playback = this.createPlaybackState();
     this.forceWebAudio = false;
     this._stretchWindow = null;
     this._stretchWindowSize = 0;
     this.buildQueue();
+  }
+
+  createPlaybackState() {
+    return {
+      abortController: null,
+      cleanup: null,
+      mode: null,
+      htmlAudio: null,
+      webAudio: null,
+    };
+  }
+
+  applyPlaybackContext(partial = {}) {
+    this.playback = { ...this.playback, ...partial };
+  }
+
+  clearPlaybackContext({ stopSource = true } = {}) {
+    const cleanup = this.currentPlaybackCleanup;
+    if (typeof cleanup === "function") {
+      cleanup(stopSource);
+    }
+    this.applyPlaybackContext({
+      abortController: null,
+      cleanup: null,
+      mode: null,
+      htmlAudio: null,
+      webAudio: null,
+    });
+  }
+
+  abortActivePlayback() {
+    const controller = this.abortController;
+    if (controller) {
+      controller.abort();
+      this.abortController = null;
+    }
+  }
+
+  createAbortController() {
+    const controller = new AbortController();
+    this.abortController = controller;
+    return controller;
+  }
+
+  beginPlaybackLoop(startIndex = 0) {
+    const controller = this.createAbortController();
+    this.loop(controller.signal, startIndex);
+  }
+
+  updateSettings(partial = {}) {
+    this.settings = { ...this.settings, ...partial };
+    return this.settings;
+  }
+
+  resetGenerationTracking() {
+    this.generatedLRU.clear();
+    if (!Array.isArray(this.queue)) return;
+    for (const item of this.queue) {
+      if (!item) continue;
+      item.genStatus = "not_generated";
+      item.genPromise = null;
+      item.blob = null;
+    }
+  }
+
+  get audio() {
+    return this.playback.htmlAudio;
+  }
+
+  set audio(value) {
+    this.playback.htmlAudio = value;
+  }
+
+  get currentPlaybackMode() {
+    return this.playback.mode;
+  }
+
+  set currentPlaybackMode(value) {
+    this.playback.mode = value;
+  }
+
+  get currentPlaybackCleanup() {
+    return this.playback.cleanup;
+  }
+
+  set currentPlaybackCleanup(value) {
+    this.playback.cleanup = value;
+  }
+
+  get webAudioState() {
+    return this.playback.webAudio;
+  }
+
+  set webAudioState(value) {
+    this.playback.webAudio = value;
+  }
+
+  get abortController() {
+    return this.playback.abortController;
+  }
+
+  set abortController(value) {
+    this.playback.abortController = value;
   }
 
   // State machine: centralized transition logic
@@ -381,6 +480,7 @@ class KokoroReader {
       genPromise: null,
       blob: null,
     }));
+    this.generatedLRU.clear();
     // Bind click/keyboard handlers to allow jumping to a specific block
     this.queue.forEach((item, i) => {
       const el = item.el && document.contains(item.el) ? item.el : resolveXPath(item.xpath);
@@ -452,7 +552,7 @@ class KokoroReader {
       await this.stop();
     }
 
-    this.settings = { ...this.settings, ...settings };
+    this.updateSettings(settings);
     await probeWebGPU();
     if (webgpuUnsupported) {
       alert("WebGPU is not available in this browser/device.");
@@ -476,8 +576,7 @@ class KokoroReader {
       return { ok: false };
     }
 
-    this.abortController = new AbortController();
-    this.loop(this.abortController.signal, 0);
+    this.beginPlaybackLoop(0);
     return { ok: true };
   }
 
@@ -528,19 +627,14 @@ class KokoroReader {
       await playPromise;
 
       if (signal.aborted) break;
-
-      // Cleanup cache outside the useful window
-      // const toDelete = [];
-      // for (const [k] of this.audioCache) {
-      //   if (k < i || k > i + PREREAD_AHEAD) toDelete.push(k);
-      // }
-      // for (const k of toDelete) this.audioCache.delete(k);
     }
 
     // Only clear and reset if we completed naturally (not aborted)
     if (!signal.aborted) {
+      this.clearPlaybackContext({ stopSource: false });
       this.highlighter.clear();
       this.setState("idle");
+      this.abortController = null;
       this.idx = -1;
     }
   }
@@ -551,17 +645,14 @@ class KokoroReader {
     }
 
     // Abort current playback if active
-    if (this.abortController) {
-      this.abortController.abort();
-    }
+    this.abortActivePlayback();
 
     // Transition to playing state
     if (!this.setState("playing")) {
       return { ok: false };
     }
 
-    this.abortController = new AbortController();
-    this.loop(this.abortController.signal, index);
+    this.beginPlaybackLoop(index);
     return { ok: true };
   }
 
@@ -896,22 +987,8 @@ class KokoroReader {
   }
 
   async stop() {
-    // Abort current playback
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
-    }
-
-    // Clean up audio
-    if (this.currentPlaybackCleanup) {
-      this.currentPlaybackCleanup();
-      this.currentPlaybackCleanup = null;
-    }
-    this.audio = null;
-    this.webAudioState = null;
-    this.currentPlaybackMode = null;
-
-    // Clear highlighting
+    this.abortActivePlayback();
+    this.clearPlaybackContext();
     this.highlighter.clear();
 
     // Transition to idle
@@ -924,17 +1001,7 @@ class KokoroReader {
   async clearCache() {
     // Called when the user changes the voice (need to regen with new voice)
     await this.stop();
-    this.audioCache.clear();
-    // Reset generation state for all items
-    if (Array.isArray(this.queue)) {
-      for (const item of this.queue) {
-        if (!item) continue;
-        item.genStatus = "not_generated";
-        item.genPromise = null;
-        item.blob = null;
-      }
-    }
-    this.generatedLRU.clear();
+    this.resetGenerationTracking();
     return { ok: true };
   }
 }
@@ -1009,15 +1076,16 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "kokoro:setSpeed": {
         const r = ensureReader();
         const speed = Number(msg.speed) || 1.0;
-        r.settings.speed = speed;
-        if (r.audio) r.audio.playbackRate = speed;
+        r.updateSettings({ speed });
+        const currentAudio = r.audio;
+        if (currentAudio) currentAudio.playbackRate = speed;
         sendResponse({ ok: true });
         break;
       }
       case "kokoro:setVoice": {
         const r = ensureReader();
         const voice = msg.voice || "af_heart";
-        r.settings.voice = voice;
+        r.updateSettings({ voice });
         sendResponse({ ok: true });
         break;
       }

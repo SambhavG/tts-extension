@@ -54,7 +54,7 @@ async function generateParagraphBlob(text, voice = "af_heart") {
   await initTTS();
   // Split on sentence boundaries so we stay under the model's max capacity
   const sentences = (text || "")
-    .split(/(?<=[\.\!?…])\s+(?=[A-Z0-9“"(\[])|(?<=\n)\s*/g)
+    .split(/(?<=[\.\!?…])\s+(?=[A-Z0-9“"(\[])|(?<=\n)\s*|(?<=—)\s*|(?<=--)\s*|\s*(?=\()|(?<=\))\s*/g)
     .map((s) => s.trim())
     .filter(Boolean);
   const { audioWav } = await callBackground({
@@ -328,6 +328,7 @@ class KokoroReader {
     this.highlighter = new Highlighter();
     this.settings = { ...DEFAULT_SETTINGS };
     this.state = "idle"; // idle | playing | paused
+    this.stateWaiters = [];
     this.generatedLRU = new Map(); // index -> true, Map order is LRU (oldest -> newest)
     this.audioContext = null;
     this.playback = this.createPlaybackState();
@@ -453,7 +454,67 @@ class KokoroReader {
       return false;
     }
     this.state = newState;
+    this.notifyStateWaiters();
     return true;
+  }
+
+  waitForState(predicate, signal) {
+    if (typeof predicate !== "function") {
+      return Promise.resolve();
+    }
+    if (predicate(this.state)) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const waiter = {
+        predicate,
+        done: false,
+        cleanup: null,
+        resolve: () => {
+          if (waiter.done) return;
+          waiter.done = true;
+          if (typeof waiter.cleanup === "function") {
+            waiter.cleanup();
+            waiter.cleanup = null;
+          }
+          resolve();
+        },
+      };
+
+      if (signal && typeof signal.addEventListener === "function") {
+        if (signal.aborted) {
+          waiter.resolve();
+          return;
+        }
+        const onAbort = () => {
+          waiter.resolve();
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        waiter.cleanup = () => {
+          signal.removeEventListener("abort", onAbort);
+        };
+      }
+
+      this.stateWaiters.push(waiter);
+    });
+  }
+
+  notifyStateWaiters() {
+    if (!Array.isArray(this.stateWaiters) || this.stateWaiters.length === 0) {
+      return;
+    }
+    const pending = [];
+    for (const waiter of this.stateWaiters) {
+      if (!waiter || waiter.done) {
+        continue;
+      }
+      if (typeof waiter.predicate === "function" && waiter.predicate(this.state)) {
+        waiter.resolve();
+      } else {
+        pending.push(waiter);
+      }
+    }
+    this.stateWaiters = pending;
   }
 
   // Ensure we're in a valid state for playback operations
@@ -615,6 +676,13 @@ class KokoroReader {
       this.evictIfNeeded();
 
       if (signal.aborted) break;
+
+      if (this.state === "paused") {
+        await this.waitForState((state) => state !== "paused", signal);
+      }
+
+      if (signal.aborted) break;
+      if (this.state !== "playing") break;
 
       // Activate highlight now that audio is ready
       this.highlighter.activate();

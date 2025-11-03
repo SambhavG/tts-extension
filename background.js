@@ -1,10 +1,116 @@
 import { KokoroTTS } from "kokoro-js";
+// import { transliterate } from "transliteration";
+import anyAscii from "any-ascii";
 
 const api = chrome;
 const DEFAULT_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 let ttsInstance = null;
 let initPromise = null;
+
+const GREEK_LETTER_NAMES = new Map(
+  Object.entries({
+    α: "alpha",
+    β: "beta",
+    γ: "gamma",
+    δ: "delta",
+    ε: "epsilon",
+    ζ: "zeta",
+    η: "eta",
+    θ: "theta",
+    ι: "iota",
+    κ: "kappa",
+    λ: "lambda",
+    μ: "mu",
+    ν: "nu",
+    ξ: "xi",
+    ο: "omicron",
+    π: "pi",
+    ρ: "rho",
+    σ: "sigma",
+    ς: "sigma",
+    τ: "tau",
+    υ: "upsilon",
+    φ: "phi",
+    χ: "chi",
+    ψ: "psi",
+    ω: "omega",
+    ϝ: "digamma",
+    ϛ: "stigma",
+    ϟ: "koppa",
+    ϡ: "sampi",
+    ϙ: "qoppa",
+    ϗ: "kai",
+    ϳ: "yot",
+  })
+);
+
+const GREEK_VARIANT_TO_BASE = new Map([
+  ["ϐ", "β"],
+  ["ϑ", "θ"],
+  ["ϒ", "Υ"],
+  ["ϓ", "Υ"],
+  ["ϔ", "Υ"],
+  ["ϕ", "φ"],
+  ["ϖ", "π"],
+  ["ϰ", "κ"],
+  ["ϱ", "ρ"],
+  ["ϲ", "σ"],
+  ["ϵ", "ε"],
+  ["϶", "ε"],
+  ["ϴ", "Θ"],
+  ["Ϲ", "Σ"],
+  ["Ϻ", "Μ"],
+  ["ϻ", "μ"],
+  ["𝜓", "ψ"],
+  ["𝜒", "χ"],
+  ["𝜔", "ω"],
+  ["𝜁", "ζ"],
+  ["𝜂", "η"],
+  ["𝜃", "θ"],
+  ["𝜄", "ι"],
+  ["𝜆", "λ"],
+  ["𝜇", "μ"],
+  ["𝜈", "ν"],
+  ["𝜉", "ξ"],
+  ["𝜊", "ο"],
+  ["𝜋", "π"],
+  ["𝜌", "ρ"],
+  ["𝜍", "σ"],
+  ["𝜎", "σ"],
+  ["𝜏", "τ"],
+  ["𝜐", "υ"],
+  ["𝜑", "φ"],
+]);
+
+const GREEK_SCRIPT_REGEX = /\p{Script=Greek}/u;
+const COMBINING_MARKS_REGEX = /\p{M}+/gu;
+
+function capitalize(word) {
+  if (!word) return word;
+  return word[0].toUpperCase() + word.slice(1);
+}
+
+function toGreekBaseChar(char) {
+  const nfkc = char.normalize("NFKC");
+  const stripped = nfkc.normalize("NFD").replace(COMBINING_MARKS_REGEX, "");
+  return GREEK_VARIANT_TO_BASE.get(stripped) || stripped;
+}
+
+function mapGreekChar(char) {
+  if (!GREEK_SCRIPT_REGEX.test(char)) return char;
+  GREEK_SCRIPT_REGEX.lastIndex = 0;
+  const base = toGreekBaseChar(char);
+  const lower = base.toLowerCase();
+  const name = GREEK_LETTER_NAMES.get(lower);
+  if (!name) return char;
+  const isUpper = base.toUpperCase() === base && base.toLowerCase() !== base;
+  return isUpper ? capitalize(name) : name;
+}
+
+function replaceGreekLettersWithNames(text) {
+  return Array.from(text).map(mapGreekChar).join("");
+}
 
 async function getActiveTabId() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
@@ -86,8 +192,29 @@ async function generateAudio(text, voice) {
   return encodeWavPCM16(raw.audio, raw.sampling_rate);
 }
 
+function cleanSentences(sentences) {
+  if (typeof sentences === "string") {
+    sentences = [sentences];
+  }
+
+  sentences = sentences.map((sentence) => replaceGreekLettersWithNames(sentence));
+  console.log(sentences);
+  sentences = sentences.map((sentence) => {
+    return anyAscii(sentence);
+  });
+
+  // //sentence must be all ascii
+  // sentences = sentences.map((sentence) => {
+  //   return transliterate(sentence, "ascii");
+  // });
+
+  return sentences;
+}
+
 async function generateBatch(sentences, voice) {
   await initTTS();
+  sentences = cleanSentences(sentences);
+  console.log(sentences);
   let items = sentences;
   if (!Array.isArray(items) || items.length === 0) {
     items = [""];
@@ -129,7 +256,6 @@ api.commands.onCommand.addListener(async (command) => {
 });
 
 api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  console.log("Message received: ", message, _sender);
   if (message?.scope !== "kokoro-tts") return;
 
   (async () => {

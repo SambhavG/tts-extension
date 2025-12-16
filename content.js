@@ -2,6 +2,7 @@
 let initted = "not_started";
 let webgpuUnsupported = !(typeof navigator !== "undefined" && navigator && navigator.gpu);
 let webgpuProbePromise = null;
+let autoScrollEnabled = true;
 
 function probeWebGPU() {
   if (webgpuProbePromise) return webgpuProbePromise;
@@ -19,6 +20,10 @@ function probeWebGPU() {
 // You can change this if you use a different model by default
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 const DEFAULT_SETTINGS = Object.freeze({ voice: "af_heart", speed: 1.0 });
+
+// Maximum length for a sentence/chunk to send to the TTS model
+// Sentences longer than this will be split at word boundaries
+const SENTENCE_MAX_LENGTH = 350;
 
 async function callBackground(message) {
   return new Promise((resolve) => {
@@ -48,18 +53,72 @@ async function listVoices() {
   return Array.isArray(voices) ? voices : [];
 }
 
-async function generateParagraphBlob(text, voice = "af_heart") {
+// Split paragraph text into individual sentences
+function splitIntoSentences(text) {
+  const sentences = (text || "")
+    .split(/(?<=[\.\!?…])\s+(?=[A-Z0-9""(\[])|(?<=\n)\s*|(?<=—)\s*|(?<=--)\s*|\s*(?=\()|(?<=\))\s*/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return sentences.length ? sentences : [text];
+}
+
+// Slice a sentence into smaller chunks if it exceeds SENTENCE_MAX_LENGTH
+// Splits intelligently at word boundaries, preferring natural pause points
+function sliceLongSentence(sentence, maxLength = SENTENCE_MAX_LENGTH) {
+  if (!sentence || sentence.length <= maxLength) {
+    return [sentence];
+  }
+
+  const chunks = [];
+  let remaining = sentence;
+
+  while (remaining.length > maxLength) {
+    // Try to find natural pause points first (comma, semicolon, colon, dash)
+    let splitPoint = -1;
+    const pauseChars = [",", ";", ":", "—", "-"];
+    for (const ch of pauseChars) {
+      const idx = remaining.lastIndexOf(ch, maxLength);
+      if (idx > maxLength * 0.4) {
+        // Don't split too early
+        splitPoint = idx + 1;
+        break;
+      }
+    }
+
+    // Fall back to last space before maxLength
+    if (splitPoint <= 0) {
+      splitPoint = remaining.lastIndexOf(" ", maxLength);
+    }
+
+    // If no space found before maxLength, look for first space after
+    if (splitPoint <= 0) {
+      splitPoint = remaining.indexOf(" ", 1);
+    }
+
+    // If still no space, force split at maxLength (edge case for very long words)
+    if (splitPoint <= 0) {
+      splitPoint = maxLength;
+    }
+
+    chunks.push(remaining.slice(0, splitPoint).trim());
+    remaining = remaining.slice(splitPoint).trim();
+  }
+
+  if (remaining) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
+// Generate audio blob for a single sentence/chunk
+async function generateSentenceBlob(text, voice = "af_heart") {
   await probeWebGPU();
   if (webgpuUnsupported) return null;
   await initTTS();
-  // Split on sentence boundaries so we stay under the model's max capacity
-  const sentences = (text || "")
-    .split(/(?<=[\.\!?…])\s+(?=[A-Z0-9“"(\[])|(?<=\n)\s*|(?<=—)\s*|(?<=--)\s*|\s*(?=\()|(?<=\))\s*/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
   const { audioWav } = await callBackground({
     type: "generateBatch",
-    payload: { sentences: sentences.length ? sentences : [text], voice },
+    payload: { sentences: [text], voice },
   });
   let wavBuffer;
   if (audioWav instanceof ArrayBuffer) {
@@ -98,19 +157,28 @@ class Highlighter {
     }
   }
   highlight(el, text) {
+    console.log("Highlighting element, autoScrollEnabled:", autoScrollEnabled);
     if (!el) return;
     this.clear();
     if (text && typeof text === "string" && text.trim()) {
       const res = this.wrapTextRange(el, text, "kokoro-tts-highlight");
       if (res && res.wrapper) {
         this.prevWrapper = res.wrapper;
-        res.wrapper.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        if (autoScrollEnabled) {
+          res.wrapper.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        }
         return;
       }
     }
     this.prevEl = el;
     el.classList.add("kokoro-tts-highlight");
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    console.log("Highlighting element, autoScrollEnabled:", autoScrollEnabled);
+    if (autoScrollEnabled) {
+      console.log("Scrolling to highlighted element");
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    } else {
+      console.log("Auto-scroll disabled, not scrolling");
+    }
   }
   // Pending (orange) highlight while generation is in progress
   highlightPending(el, text) {
@@ -120,13 +188,20 @@ class Highlighter {
       const res = this.wrapTextRange(el, text, "kokoro-tts-pending");
       if (res && res.wrapper) {
         this.prevWrapper = res.wrapper;
-        res.wrapper.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        if (autoScrollEnabled) {
+          res.wrapper.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        }
         return;
       }
     }
     this.prevEl = el;
     el.classList.add("kokoro-tts-pending");
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (autoScrollEnabled) {
+      console.log("Scrolling to pending element");
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    } else {
+      console.log("Auto-scroll disabled, not scrolling");
+    }
   }
   // Switch pending highlight to active (yellow)
   activate() {
@@ -533,24 +608,42 @@ class KokoroReader {
     const root = hasSelection ? sel.getRangeAt(0).commonAncestorContainer : chooseRoot();
     const rootEl = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
     const containers = collectTextContainers(rootEl || document.body);
-    this.queue = containers.map((c) => ({
-      xpath: c.xpath,
-      el: c.el,
-      text: c.text,
-      genStatus: "not_generated", // not_generated | generating | generated
-      genPromise: null,
-      blob: null,
-    }));
+
+    // Build queue at sentence level (with long sentence slicing)
+    this.queue = [];
+    for (const c of containers) {
+      const sentences = splitIntoSentences(c.text);
+      for (const sentence of sentences) {
+        const chunks = sliceLongSentence(sentence);
+        for (const chunk of chunks) {
+          this.queue.push({
+            xpath: c.xpath,
+            el: c.el,
+            text: chunk, // The sentence/chunk to read and highlight
+            genStatus: "not_generated", // not_generated | generating | generated
+            genPromise: null,
+            blob: null,
+          });
+        }
+      }
+    }
+
     this.generatedLRU.clear();
+
     // Bind click/keyboard handlers to allow jumping to a specific block
+    // Track elements we've already bound to avoid duplicates (multiple sentences per element)
+    const boundElements = new Set();
     this.queue.forEach((item, i) => {
       const el = item.el && document.contains(item.el) ? item.el : resolveXPath(item.xpath);
       if (!el) return;
-      if (el.dataset.kokoroClickableBound === "1") return;
+      if (el.dataset.kokoroClickableBound === "1" || boundElements.has(el)) return;
+      boundElements.add(el);
       el.dataset.kokoroClickableBound = "1";
       el.classList.add("kokoro-tts-clickable");
+      // Find the first queue index for this element
+      const firstIdx = this.queue.findIndex((q) => q.el === el || q.xpath === item.xpath);
       el.addEventListener("click", () => {
-        this.jumpTo(i);
+        this.jumpTo(firstIdx >= 0 ? firstIdx : i);
       });
       if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
       if (!el.hasAttribute("role")) el.setAttribute("role", "button");
@@ -570,10 +663,10 @@ class KokoroReader {
     if (item.genStatus === "generating" && item.genPromise) {
       return item.genPromise;
     }
-    // Start generation
+    // Start generation for single sentence/chunk
     item.genStatus = "generating";
     const p = (async () => {
-      const blob = await generateParagraphBlob(item.text, this.settings.voice);
+      const blob = await generateSentenceBlob(item.text, this.settings.voice);
       item.blob = blob;
       item.genStatus = "generated";
       // On generation completion, bump LRU and evict if needed
@@ -1110,10 +1203,11 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (webgpuUnsupported) {
           sendResponse({ ok: true, loaded: false, webgpuUnsupported: true });
         } else if (initted !== "done") {
-          sendResponse({ ok: true, loaded: false });
+          const { loaded, downloadProgress } = await callBackground({ type: "status" });
+          sendResponse({ ok: true, loaded, downloadProgress });
         } else {
-          const { loaded } = await callBackground({ type: "status" });
-          sendResponse({ ok: true, loaded });
+          const { loaded, downloadProgress } = await callBackground({ type: "status" });
+          sendResponse({ ok: true, loaded, downloadProgress });
         }
         break;
       }
@@ -1154,6 +1248,12 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const r = ensureReader();
         const voice = msg.voice || "af_heart";
         r.updateSettings({ voice });
+        sendResponse({ ok: true });
+        break;
+      }
+      case "kokoro:setAutoScroll": {
+        autoScrollEnabled = Boolean(msg.autoScroll);
+        console.log("Auto-scroll setting changed to:", autoScrollEnabled);
         sendResponse({ ok: true });
         break;
       }

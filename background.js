@@ -7,6 +7,7 @@ const DEFAULT_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
 let ttsInstance = null;
 let initPromise = null;
+let downloadProgress = { status: "idle", loaded: 0, total: 0 };
 
 const GREEK_LETTER_NAMES = new Map(
   Object.entries({
@@ -121,12 +122,28 @@ async function initTTS(modelId, dtype, device) {
   if (ttsInstance) return ttsInstance;
   if (!initPromise) {
     const resolvedModelId = modelId || DEFAULT_MODEL_ID;
+    downloadProgress = { status: "downloading", loaded: 0, total: 0 };
     initPromise = KokoroTTS.from_pretrained(resolvedModelId, {
       dtype: dtype || "fp32",
       device: device || "webgpu",
+      progress_callback: (progress) => {
+        if (progress.status === "download") {
+          downloadProgress = {
+            status: "downloading",
+            loaded: progress.loaded || 0,
+            total: progress.total || 0
+          };
+        } else if (progress.status === "done") {
+          downloadProgress = { status: "idle", loaded: 0, total: 0 };
+        }
+      }
     }).then((instance) => {
       ttsInstance = instance;
+      downloadProgress = { status: "idle", loaded: 0, total: 0 };
       return instance;
+    }).catch((error) => {
+      downloadProgress = { status: "idle", loaded: 0, total: 0 };
+      throw error;
     });
   }
   return initPromise;
@@ -266,7 +283,11 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       }
       case "status": {
-        sendResponse({ ok: true, loaded: ttsInstance !== null });
+        sendResponse({
+          ok: true,
+          loaded: ttsInstance !== null,
+          downloadProgress: downloadProgress.status === "downloading" ? downloadProgress : null
+        });
         break;
       }
       case "voices": {

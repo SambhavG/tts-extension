@@ -115,8 +115,6 @@ select:focus {
 }
 
 label:has(input[type="checkbox"]) {
-  display: flex;
-  align-items: center;
   cursor: pointer;
   color: #b0b0b0;
   font-weight: 500;
@@ -131,6 +129,17 @@ label input[type="checkbox"] {
   width: 14px;
   height: 14px;
   accent-color: #00ffff;
+}
+
+.row:has(#auto-scroll) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#auto-scroll {
+  width: 16px;
+  height: 16px;
 }
 
 /* Button container */
@@ -247,6 +256,17 @@ button:disabled {
   margin: 1em;
 }
 
+.version {
+  position: relative;
+  font-size: 0.55em;
+  text-align: center;
+  margin: 0.75em 1em 1em;
+  color: #888;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
 #status-section {
   display: flex;
   flex-direction: column;
@@ -312,4 +332,42 @@ button:disabled {
   25% { transform: scaleY(math.sin(0.5)); }
   50% { transform: scaleY(0); }
   75% { transform: scaleY(math.sin(0.5)); }
+}
+
+/* Download progress bar */
+.download-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  height: 2em;
+  margin-top: 0.25em;
+}
+
+.progress-bar-container {
+  width: 120px;
+  height: 6px;
+  background: rgba(0, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 255, 255, 0.2);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00ffff 0%, #8a2be2 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+}
+
+.progress-text {
+  font-size: 0.7em;
+  color: #00ffff;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 6px rgba(0, 255, 255, 0.5);
+  min-width: 35px;
+  text-align: center;
 }

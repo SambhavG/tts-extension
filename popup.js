@@ -26,6 +26,7 @@ const $status = document.getElementById("status");
 const $voice = document.getElementById("voice");
 const $speed = document.getElementById("speed");
 const $readButton = document.getElementById("read-button");
+const $autoScroll = document.getElementById("auto-scroll");
 
 async function ensureInjected() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
@@ -103,10 +104,13 @@ async function refreshVoices() {
 async function initState() {
   const { kokoroSpeed = 1.0 } = await api.storage.sync.get(["kokoroSpeed"]);
   const { kokoroVoice = "af_heart" } = await api.storage.sync.get(["kokoroVoice"]);
+  const { kokoroAutoScroll = true } = await api.storage.sync.get(["kokoroAutoScroll"]);
+  $autoScroll.checked = kokoroAutoScroll;
   const injected = await ensureInjected();
   if (!injected) return;
   await sendToActiveTab({ type: "kokoro:setSpeed", speed: kokoroSpeed });
   await sendToActiveTab({ type: "kokoro:setVoice", voice: kokoroVoice });
+  await sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll: kokoroAutoScroll });
   initUIFromContentState();
 }
 
@@ -151,6 +155,12 @@ $speed.addEventListener("change", async () => {
   await initUIFromContentState();
 });
 
+$autoScroll.addEventListener("change", async () => {
+  const autoScroll = $autoScroll.checked;
+  await api.storage.sync.set({ kokoroAutoScroll: autoScroll });
+  await sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll });
+});
+
 async function checkModelStatus() {
   const injected = await ensureInjected();
   if (!injected) {
@@ -171,6 +181,20 @@ async function checkModelStatus() {
     $readButton.innerHTML = `
       <span class="error-text">Failed to load, likely due to page's security policy</span>
     `;
+  } else if (res?.downloadProgress) {
+    // Show download progress bar
+    const progress = res.downloadProgress;
+    const percentage = progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : 0;
+    $readButton.innerHTML = `
+      <div class="download-progress">
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" style="width: ${percentage}%"></div>
+        </div>
+        <span class="progress-text">${percentage}%</span>
+      </div>
+    `;
+    // Check again in 200ms for smoother progress updates
+    setTimeout(checkModelStatus, 200);
   } else {
     $readButton.innerHTML = `
       <div class="sine-wave">
@@ -188,7 +212,7 @@ async function checkModelStatus() {
         <span class="wave-bar"></span>
       </div>
     `;
-    // Check again in 500ms
+    // Check again in 600ms
     setTimeout(checkModelStatus, 600);
   }
 }

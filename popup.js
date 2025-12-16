@@ -1,72 +1,59 @@
-const api = chrome; // Firefox aliases chrome→browser; callbacks still work
+const api = chrome;
 
-async function activeTabId() {
+// --- DOM references ---
+const $ = (id) => document.getElementById(id);
+const $voice = $("voice");
+const $speed = $("speed");
+const $readButton = $("read-button");
+const $autoScroll = $("auto-scroll");
+
+// --- Tab communication ---
+async function getActiveTab() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-  return tab?.id;
+  return tab;
 }
 
-function sendToActiveTab(message) {
-  return activeTabId().then((id) => {
-    if (!id) return Promise.reject(new Error("No active tab"));
-    return new Promise((resolve) => {
-      api.tabs.sendMessage(id, message, (response) => {
-        // Handle chrome.runtime.lastError
-        if (api.runtime.lastError) {
-          resolve({ ok: false, error: api.runtime.lastError.message });
-        } else {
-          resolve(response);
-        }
-      });
+async function sendToTab(tabId, message) {
+  return new Promise((resolve) => {
+    api.tabs.sendMessage(tabId, message, (response) => {
+      resolve(api.runtime.lastError ? { ok: false, error: api.runtime.lastError.message } : response);
     });
   });
 }
 
-const $statusSection = document.getElementById("status-section");
-const $status = document.getElementById("status");
-const $voice = document.getElementById("voice");
-const $speed = document.getElementById("speed");
-const $readButton = document.getElementById("read-button");
-const $autoScroll = document.getElementById("auto-scroll");
+async function sendToActiveTab(message) {
+  const tab = await getActiveTab();
+  if (!tab?.id) return { ok: false, error: "No active tab" };
+  return sendToTab(tab.id, message);
+}
+
+// --- Content script injection ---
+const RESTRICTED_PREFIXES = ["chrome://", "edge://", "about:", "moz-extension://", "chrome-extension://"];
+
+function isRestrictedUrl(url) {
+  return RESTRICTED_PREFIXES.some((prefix) => url?.startsWith(prefix));
+}
 
 async function ensureInjected() {
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+  const tab = await getActiveTab();
   if (!tab?.id) return false;
 
-  const ping = await new Promise((resolve) => {
-    api.tabs.sendMessage(tab.id, { type: "kokoro:ping" }, (res) => {
-      if (api.runtime.lastError) resolve(null);
-      else resolve(res);
-    });
-  });
+  const ping = await sendToTab(tab.id, { type: "kokoro:ping" });
   if (ping?.ok) return true;
 
   await api.scripting.insertCSS({ target: { tabId: tab.id }, files: ["content.css"] });
   await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
 
-  const ping2 = await new Promise((resolve) => {
-    api.tabs.sendMessage(tab.id, { type: "kokoro:ping" }, (res) => {
-      if (api.runtime.lastError) resolve(null);
-      else resolve(res);
-    });
-  });
+  const ping2 = await sendToTab(tab.id, { type: "kokoro:ping" });
   return !!ping2?.ok;
 }
 
 async function checkContentScriptAvailability() {
-  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-  if (!tab) return false;
-
-  // Content script doesn't load on chrome://, edge://, or other extension pages
-  const url = tab.url || "";
-  return (
-    !url.startsWith("chrome://") &&
-    !url.startsWith("edge://") &&
-    !url.startsWith("about:") &&
-    !url.startsWith("moz-extension://") &&
-    !url.startsWith("chrome-extension://")
-  );
+  const tab = await getActiveTab();
+  return tab && !isRestrictedUrl(tab.url);
 }
 
+// --- Voice management ---
 async function refreshVoices() {
   const isAvailable = await checkContentScriptAvailability();
   if (!isAvailable) {
@@ -82,77 +69,80 @@ async function refreshVoices() {
 
   const res = await sendToActiveTab({ type: "kokoro:listVoices" });
   if (!res?.ok) {
-    const msg = res?.error || "TTS init failed";
-    $voice.innerHTML = `<option value="">${msg}</option>`;
+    $voice.innerHTML = `<option value="">${res?.error || "TTS init failed"}</option>`;
     return;
   }
+
   const voices = Array.isArray(res.voices) ? res.voices : [];
-  $voice.innerHTML = "";
-  for (const v of voices) {
-    const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = (v[0] == "a" ? "🇺🇸" : "🇬🇧") + (v[1] == "f" ? "👩" : "👨") + v.substring(3);
-    $voice.appendChild(opt);
-  }
-  // Load saved voice if any
-  const desired = $voice.dataset.desiredVoice;
+  $voice.innerHTML = voices
+    .map((v) => {
+      const flag = v[0] === "a" ? "🇺🇸" : "🇬🇧";
+      const gender = v[1] === "f" ? "👩" : "👨";
+      return `<option value="${v}">${flag}${gender}${v.substring(3)}</option>`;
+    })
+    .join("");
+
   const { kokoroVoice } = await api.storage.sync.get("kokoroVoice");
-  const pick = desired || kokoroVoice;
+  const pick = $voice.dataset.desiredVoice || kokoroVoice;
   if (pick && voices.includes(pick)) $voice.value = pick;
 }
 
+// --- UI state management ---
 async function initState() {
-  const { kokoroSpeed = 1.0 } = await api.storage.sync.get(["kokoroSpeed"]);
-  const { kokoroVoice = "af_heart" } = await api.storage.sync.get(["kokoroVoice"]);
-  const { kokoroAutoScroll = true } = await api.storage.sync.get(["kokoroAutoScroll"]);
-  $autoScroll.checked = kokoroAutoScroll;
+  const stored = await api.storage.sync.get(["kokoroSpeed", "kokoroVoice", "kokoroAutoScroll"]);
+  const speed = stored.kokoroSpeed ?? 1.0;
+  const voice = stored.kokoroVoice ?? "af_heart";
+  const autoScroll = stored.kokoroAutoScroll ?? true;
+
+  $autoScroll.checked = autoScroll;
+
   const injected = await ensureInjected();
   if (!injected) return;
-  await sendToActiveTab({ type: "kokoro:setSpeed", speed: kokoroSpeed });
-  await sendToActiveTab({ type: "kokoro:setVoice", voice: kokoroVoice });
-  await sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll: kokoroAutoScroll });
-  initUIFromContentState();
+
+  await Promise.all([
+    sendToActiveTab({ type: "kokoro:setSpeed", speed }),
+    sendToActiveTab({ type: "kokoro:setVoice", voice }),
+    sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll }),
+  ]);
+
+  syncUIFromContent();
 }
 
-async function initUIFromContentState() {
+async function syncUIFromContent() {
   const injected = await ensureInjected();
   if (!injected) return;
-  const stateRes = await sendToActiveTab({ type: "kokoro:getState" });
-  if (!stateRes?.ok) return;
-  const { state, settings } = stateRes;
-  $speed.value = Number(settings.speed).toFixed(2);
-  $voice.value = settings.voice;
-  if (state === "idle") {
-    $readButton.textContent = "Read";
-  } else if (state === "playing") {
-    $readButton.textContent = "Pause";
-  } else if (state === "paused") {
-    $readButton.textContent = "Resume";
-  }
+
+  const res = await sendToActiveTab({ type: "kokoro:getState" });
+  if (!res?.ok) return;
+
+  $speed.value = Number(res.settings.speed).toFixed(2);
+  $voice.value = res.settings.voice;
+
+  const labels = { idle: "Read", playing: "Pause", paused: "Resume" };
+  $readButton.textContent = labels[res.state] || "Read";
 }
 
+// --- Event handlers ---
 $readButton.addEventListener("click", async () => {
-  const injected = await ensureInjected();
-  if (!injected) return;
+  if (!(await ensureInjected())) return;
   await sendToActiveTab({ type: "kokoro:playButtonPressed" });
-  initUIFromContentState();
+  syncUIFromContent();
 });
 
 $voice.addEventListener("change", async () => {
-  const v = $voice.value || "";
-  await api.storage.sync.set({ kokoroVoice: v });
-  await sendToActiveTab({ type: "kokoro:setVoice", voice: v });
+  const voice = $voice.value || "";
+  await api.storage.sync.set({ kokoroVoice: voice });
+  await sendToActiveTab({ type: "kokoro:setVoice", voice });
   await sendToActiveTab({ type: "kokoro:clearCache" });
-  await initUIFromContentState();
+  syncUIFromContent();
 });
 
 $speed.addEventListener("change", async () => {
-  const injected = await ensureInjected();
-  if (!injected) return;
+  if (!(await ensureInjected())) return;
   const speed = Number($speed.value);
   await api.storage.sync.set({ kokoroSpeed: speed });
   await sendToActiveTab({ type: "kokoro:setSpeed", speed });
-  await initUIFromContentState();
+  syncUIFromContent();
 });
 
 $autoScroll.addEventListener("change", async () => {
@@ -161,65 +151,53 @@ $autoScroll.addEventListener("change", async () => {
   await sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll });
 });
 
+// --- Model status checking ---
 async function checkModelStatus() {
   const injected = await ensureInjected();
-  if (!injected) {
-    $statusSection.style.display = "none";
+  if (!injected) return;
+
+  const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
+
+  if (res?.loaded) {
+    $readButton.innerHTML = '<span class="read-text">read</span>';
     return;
   }
 
-  const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
-  if (res?.loaded) {
-    $readButton.innerHTML = `
-      <span class="read-text">read</span>
-      `;
-  } else if (res?.webgpuUnsupported) {
-    $readButton.innerHTML = `
-      <span class="error-text">WebGPU is not available - please enable graphics acceleration at chrome://settings/system</span>
-    `;
-  } else if (res?.cspError) {
-    $readButton.innerHTML = `
-      <span class="error-text">Failed to load, likely due to page's security policy</span>
-    `;
-  } else if (res?.downloadProgress) {
-    // Show download progress bar
-    const progress = res.downloadProgress;
-    const percentage = progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : 0;
+  if (res?.webgpuUnsupported) {
+    $readButton.innerHTML =
+      '<span class="error-text">WebGPU is not available - please enable graphics acceleration at chrome://settings/system</span>';
+    return;
+  }
+
+  if (res?.cspError) {
+    $readButton.innerHTML = '<span class="error-text">Failed to load, likely due to page\'s security policy</span>';
+    return;
+  }
+
+  if (res?.downloadProgress) {
+    const { loaded, total } = res.downloadProgress;
+    const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
     $readButton.innerHTML = `
       <div class="download-progress">
         <div class="progress-bar-container">
-          <div class="progress-bar-fill" style="width: ${percentage}%"></div>
+          <div class="progress-bar-fill" style="width: ${pct}%"></div>
         </div>
-        <span class="progress-text">${percentage}%</span>
-      </div>
-    `;
-    // Check again in 200ms for smoother progress updates
+        <span class="progress-text">${pct}%</span>
+      </div>`;
     setTimeout(checkModelStatus, 200);
-  } else {
-    $readButton.innerHTML = `
-      <div class="sine-wave">
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-        <span class="wave-bar"></span>
-      </div>
-    `;
-    // Check again in 600ms
-    setTimeout(checkModelStatus, 600);
+    return;
   }
+
+  $readButton.innerHTML = `
+    <div class="sine-wave">
+      ${Array(12).fill('<span class="wave-bar"></span>').join("")}
+    </div>`;
+  setTimeout(checkModelStatus, 600);
 }
 
+// --- Initialize ---
 (async function init() {
   await checkModelStatus();
   await initState();
-  // await initUIFromContentState();
   await refreshVoices();
 })();

@@ -1,3 +1,18 @@
+// Suppress ONNX Runtime warnings by intercepting console.warn
+const originalWarn = console.warn;
+console.warn = function(...args) {
+  // Suppress specific ONNX Runtime warnings
+  const message = args.join(' ');
+  if (message.includes('onnxruntime') &&
+      (message.includes('Some nodes were not assigned to the preferred execution providers') ||
+       message.includes('Rerunning with verbose output on a non-minimal build will show node assignments') ||
+       message.includes('VerifyEachNodeIsAssignedToAnEp'))) {
+    return; // Suppress these warnings
+  }
+  // Call original warn for other messages
+  originalWarn.apply(console, args);
+};
+
 import { KokoroTTS } from "kokoro-js";
 import anyAscii from "any-ascii";
 

@@ -1,18 +1,11 @@
-/* Yellow highlight for the element currently being read */
+/* Base styles for highlighting - colors will be set dynamically */
 .kokoro-tts-highlight {
-  color: black !important;
-  background-color: rgb(255, 255, 0, 0.9) !important;
   transition: background-color 100ms ease-in-out;
-  outline: 2px solid rgba(255, 255, 0, 0.9);
   outline-offset: 2px;
 }
 
-/* Orange highlight for content pending generation */
 .kokoro-tts-pending {
-  color: black !important;
-  background-color: rgba(255, 232, 130, 0.9); !important;
   transition: background-color 100ms ease-in-out;
-  outline: 2px dashed rgba(255, 232, 130, 0.9);
   outline-offset: 2px;
 }
 

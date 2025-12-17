@@ -6,6 +6,7 @@ const $voice = $("voice");
 const $speed = $("speed");
 const $readButton = $("read-button");
 const $autoScroll = $("auto-scroll");
+const $highlightColor = $("highlight-color");
 
 // --- Tab communication ---
 async function getActiveTab() {
@@ -39,12 +40,20 @@ async function ensureInjected() {
   if (!tab?.id) return false;
 
   const ping = await sendToTab(tab.id, { type: "kokoro:ping" });
-  if (ping?.ok) return true;
+  if (ping?.ok) {
+    // Content script is already loaded, initialize click handlers
+    await sendToTab(tab.id, { type: "kokoro:initializeClickHandlers" });
+    return true;
+  }
 
   await api.scripting.insertCSS({ target: { tabId: tab.id }, files: ["content.css"] });
   await api.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
 
   const ping2 = await sendToTab(tab.id, { type: "kokoro:ping" });
+  if (ping2?.ok) {
+    // Content script just loaded, initialize click handlers
+    await sendToTab(tab.id, { type: "kokoro:initializeClickHandlers" });
+  }
   return !!ping2?.ok;
 }
 
@@ -87,14 +96,29 @@ async function refreshVoices() {
   if (pick && voices.includes(pick)) $voice.value = pick;
 }
 
+// --- Color utility functions ---
+function isColorLight(hexColor) {
+  // Remove # if present
+  const hex = hexColor.replace("#", "");
+  // Convert to RGB
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  // Calculate luminance using the formula for perceived brightness
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5; // Light if above 50% brightness
+}
+
 // --- UI state management ---
 async function initState() {
-  const stored = await api.storage.sync.get(["kokoroSpeed", "kokoroVoice", "kokoroAutoScroll"]);
+  const stored = await api.storage.sync.get(["kokoroSpeed", "kokoroVoice", "kokoroAutoScroll", "kokoroHighlightColor"]);
   const speed = stored.kokoroSpeed ?? 1.0;
   const voice = stored.kokoroVoice ?? "af_heart";
   const autoScroll = stored.kokoroAutoScroll ?? true;
+  const highlightColor = stored.kokoroHighlightColor ?? "#ffff00";
 
   $autoScroll.checked = autoScroll;
+  $highlightColor.value = highlightColor;
 
   const injected = await ensureInjected();
   if (!injected) return;
@@ -103,6 +127,7 @@ async function initState() {
     sendToActiveTab({ type: "kokoro:setSpeed", speed }),
     sendToActiveTab({ type: "kokoro:setVoice", voice }),
     sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll }),
+    sendToActiveTab({ type: "kokoro:setHighlightColor", color: highlightColor }),
   ]);
 
   syncUIFromContent();
@@ -117,6 +142,9 @@ async function syncUIFromContent() {
 
   $speed.value = Number(res.settings.speed).toFixed(2);
   $voice.value = res.settings.voice;
+  if (res.settings.highlightColor) {
+    $highlightColor.value = res.settings.highlightColor;
+  }
 
   const labels = { idle: "Read", playing: "Pause", paused: "Resume" };
   $readButton.textContent = labels[res.state] || "Read";
@@ -133,7 +161,8 @@ $voice.addEventListener("change", async () => {
   const voice = $voice.value || "";
   await api.storage.sync.set({ kokoroVoice: voice });
   await sendToActiveTab({ type: "kokoro:setVoice", voice });
-  await sendToActiveTab({ type: "kokoro:clearCache" });
+  // Instead of clearing cache (which stops playback), regenerate current content
+  await sendToActiveTab({ type: "kokoro:regenerateCurrent" });
   syncUIFromContent();
 });
 
@@ -151,6 +180,12 @@ $autoScroll.addEventListener("change", async () => {
   await sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll });
 });
 
+$highlightColor.addEventListener("change", async () => {
+  const color = $highlightColor.value;
+  await api.storage.sync.set({ kokoroHighlightColor: color });
+  await sendToActiveTab({ type: "kokoro:setHighlightColor", color });
+});
+
 // --- Model status checking ---
 async function checkModelStatus() {
   const injected = await ensureInjected();
@@ -159,7 +194,7 @@ async function checkModelStatus() {
   const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
 
   if (res?.loaded) {
-    $readButton.innerHTML = '<span class="read-text">read</span>';
+    $readButton.textContent = "Read";
     return;
   }
 
@@ -175,14 +210,9 @@ async function checkModelStatus() {
   }
 
   if (res?.downloadProgress) {
-    const { loaded, total } = res.downloadProgress;
-    const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
     $readButton.innerHTML = `
       <div class="download-progress">
-        <div class="progress-bar-container">
-          <div class="progress-bar-fill" style="width: ${pct}%"></div>
-        </div>
-        <span class="progress-text">${pct}%</span>
+        <span class="progress-text">Downloading TTS model...</span>
       </div>`;
     setTimeout(checkModelStatus, 200);
     return;
@@ -190,7 +220,7 @@ async function checkModelStatus() {
 
   $readButton.innerHTML = `
     <div class="sine-wave">
-      ${Array(12).fill('<span class="wave-bar"></span>').join("")}
+      ${Array(8).fill('<span class="wave-bar"></span>').join("")}
     </div>`;
   setTimeout(checkModelStatus, 600);
 }

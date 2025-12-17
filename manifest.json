@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Local Reader: AI On Device Text-to-Speech",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Read websites aloud with an AI model running in your browser",
   "action": {
     "default_popup": "popup.html",

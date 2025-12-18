@@ -10,7 +10,7 @@ export const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const DEFAULT_SETTINGS = Object.freeze({
   voice: "af_heart",
   speed: 1.0,
-  highlightColor: "#ffff00",
+  highlightColor: "#22a594",
 });
 
 /** Maximum characters per sentence chunk */
@@ -26,7 +26,7 @@ export const LRU_MAX_SIZE = 30;
 export const STRETCH_CHUNK_SIZE = 16384;
 
 /** Background message timeout in milliseconds */
-export const MESSAGE_TIMEOUT_MS = 30000;
+export const MESSAGE_TIMEOUT_MS = 60000;
 
 /** Extension message scope for validation */
 export const MESSAGE_SCOPE = "kokoro-tts";

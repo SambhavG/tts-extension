@@ -212,6 +212,10 @@ export class DomManager {
 
     for (const c of containers) {
       for (const sentence of splitIntoSentences(c.text)) {
+        // Skip sentences that contain no letters or digits (like "...")
+        if (!/[a-zA-Z0-9]/.test(sentence)) {
+          continue;
+        }
         for (const chunk of sliceLongSentence(sentence)) {
           queue.push({
             xpath: c.xpath,

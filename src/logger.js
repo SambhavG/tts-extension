@@ -67,4 +67,4 @@ export class Logger {
 }
 
 /** Global logger instance */
-export const logger = new Logger("KokoroTTS", LogLevel.DEBUG);
+export const logger = new Logger("KokoroTTS", LogLevel.NONE);

@@ -35,9 +35,7 @@ export function splitIntoSentences(text) {
 
   const segmenter = getSentenceSegmenter();
   if (segmenter) {
-    const segments = [...segmenter.segment(normalized)]
-      .map((s) => s.segment.trim())
-      .filter(Boolean);
+    const segments = [...segmenter.segment(normalized)].map((s) => s.segment.trim()).filter(Boolean);
     return segments.length ? segments : [normalized];
   }
 
@@ -97,4 +95,3 @@ export function sliceLongSentence(sentence, maxLength = SENTENCE_MAX_LENGTH) {
   if (remaining) chunks.push(remaining);
   return chunks;
 }
-

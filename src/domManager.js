@@ -24,6 +24,8 @@ export class DomManager {
     this._prevWrapper = null;
     /** @type {boolean} */
     this._autoScrollEnabled = true;
+    /** @type {string} */
+    this._highlightColor = "#ffff00";
     /** @type {string|null} */
     this._lastQueueHash = null;
     /** @type {QueueItem[]|null} */
@@ -32,6 +34,9 @@ export class DomManager {
     this._lastHighlightTime = 0;
     /** Minimum ms between highlight updates */
     this._highlightThrottleMs = 16;
+
+    // Initialize default highlight styles
+    this._updateHighlightStyles();
   }
 
   /**
@@ -40,6 +45,97 @@ export class DomManager {
    */
   setAutoScroll(enabled) {
     this._autoScrollEnabled = enabled;
+  }
+
+  /**
+   * Sets the highlight color.
+   * @param {string} color
+   */
+  setHighlightColor(color) {
+    this._highlightColor = color;
+    this._updateHighlightStyles();
+  }
+
+  /**
+   * Updates the dynamic highlight styles.
+   * @private
+   */
+  _updateHighlightStyles() {
+    // Remove existing style element if it exists
+    const existingStyle = document.getElementById("kokoro-dynamic-styles");
+    if (existingStyle) {
+      existingStyle.remove();
+    }
+
+    // Create new style element with dynamic colors
+    const style = document.createElement("style");
+    style.id = "kokoro-dynamic-styles";
+
+    // Calculate text color based on background color brightness
+    const isLight = this._isColorLight(this._highlightColor);
+    const textColor = isLight ? "black" : "white";
+    const pendingBgColor = this._lightenColor(this._highlightColor, 0.1);
+    const pendingTextColor = this._isColorLight(pendingBgColor) ? "black" : "white";
+
+    style.textContent = `
+      .kokoro-tts-highlight {
+        color: ${textColor} !important;
+        background-color: ${this._hexToRgba(this._highlightColor, 0.9)} !important;
+        outline: 2px solid ${this._hexToRgba(this._highlightColor, 0.9)};
+      }
+      .kokoro-tts-pending {
+        color: ${pendingTextColor} !important;
+        background-color: ${this._hexToRgba(pendingBgColor, 0.9)} !important;
+        outline: 2px dashed ${this._hexToRgba(pendingBgColor, 0.9)};
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Checks if a color is light.
+   * @private
+   * @param {string} hexColor
+   * @returns {boolean}
+   */
+  _isColorLight(hexColor) {
+    const hex = hexColor.replace("#", "");
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5;
+  }
+
+  /**
+   * Lightens a color by a given percentage.
+   * @private
+   * @param {string} hexColor
+   * @param {number} percent
+   * @returns {string}
+   */
+  _lightenColor(hexColor, percent) {
+    const hex = hexColor.replace("#", "");
+    const r = Math.min(255, parseInt(hex.substr(0, 2), 16) + Math.round(255 * percent));
+    const g = Math.min(255, parseInt(hex.substr(2, 2), 16) + Math.round(255 * percent));
+    const b = Math.min(255, parseInt(hex.substr(4, 2), 16) + Math.round(255 * percent));
+    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+  }
+
+  /**
+   * Converts hex color to rgba string.
+   * @private
+   * @param {string} hexColor
+   * @param {number} alpha
+   * @returns {string}
+   */
+  _hexToRgba(hexColor, alpha) {
+    const hex = hexColor.replace("#", "");
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   // ---------------------------------------------------------------------------
@@ -455,7 +551,7 @@ export class DomManager {
     for (let i = 0; i <= occurrenceIndex; i++) {
       startIdx = norm.indexOf(target, searchFrom);
       if (startIdx === -1) return null;
-      searchFrom = startIdx + 1;
+      searchFrom = startIdx + target.length;
     }
 
     const endIdx = startIdx + target.length - 1;

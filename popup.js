@@ -187,47 +187,66 @@ $highlightColor.addEventListener("change", async () => {
 });
 
 // --- Model status checking ---
-async function checkModelStatus() {
+/**
+ * Waits for model to be loaded, showing progress in the UI.
+ * Returns a Promise that resolves when model is loaded (or rejects on error).
+ * @returns {Promise<boolean>} True if model loaded successfully
+ */
+async function waitForModelLoaded() {
   const injected = await ensureInjected();
-  if (!injected) return;
+  if (!injected) return false;
 
-  const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
+  // Trigger model initialization in background (idempotent)
+  sendToActiveTab({ type: "kokoro:triggerModelInit" });
 
-  if (res?.loaded) {
-    $readButton.textContent = "Read";
-    return;
-  }
+  return new Promise((resolve) => {
+    async function poll() {
+      const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
 
-  if (res?.webgpuUnsupported) {
-    $readButton.innerHTML =
-      '<span class="error-text">WebGPU is not available - please enable graphics acceleration at chrome://settings/system</span>';
-    return;
-  }
+      if (res?.loaded) {
+        $readButton.textContent = "Read";
+        resolve(true);
+        return;
+      }
 
-  if (res?.cspError) {
-    $readButton.innerHTML = '<span class="error-text">Failed to load, likely due to page\'s security policy</span>';
-    return;
-  }
+      if (res?.webgpuUnsupported) {
+        $readButton.innerHTML =
+          '<span class="error-text">WebGPU is not available - please enable graphics acceleration at chrome://settings/system</span>';
+        resolve(false);
+        return;
+      }
 
-  if (res?.downloadProgress) {
-    $readButton.innerHTML = `
-      <div class="download-progress">
-        <span class="progress-text">Downloading TTS model...</span>
-      </div>`;
-    setTimeout(checkModelStatus, 200);
-    return;
-  }
+      if (res?.cspError) {
+        $readButton.innerHTML = '<span class="error-text">Failed to load, likely due to page\'s security policy</span>';
+        resolve(false);
+        return;
+      }
 
-  $readButton.innerHTML = `
-    <div class="sine-wave">
-      ${Array(8).fill('<span class="wave-bar"></span>').join("")}
-    </div>`;
-  setTimeout(checkModelStatus, 600);
+      if (res?.downloadProgress) {
+        $readButton.innerHTML = `
+          <div class="download-progress">
+            <span class="progress-text">Downloading TTS model...</span>
+          </div>`;
+        setTimeout(poll, 200);
+        return;
+      }
+
+      $readButton.innerHTML = `
+        <div class="sine-wave">
+          ${Array(8).fill('<span class="wave-bar"></span>').join("")}
+        </div>`;
+      setTimeout(poll, 600);
+    }
+
+    poll();
+  });
 }
 
 // --- Initialize ---
 (async function init() {
-  await checkModelStatus();
+  const modelLoaded = await waitForModelLoaded();
+  if (!modelLoaded) return; // Error already shown in UI
+
   await initState();
   await refreshVoices();
 })();

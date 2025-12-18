@@ -101,6 +101,13 @@ export async function handleMessage(msg) {
       };
     }
 
+    case "kokoro:triggerModelInit": {
+      // Fire-and-forget initialization trigger
+      // This starts the model loading process in the background without waiting
+      initManager.initTTS().catch(() => {});
+      return { ok: true };
+    }
+
     case "kokoro:listVoices": {
       const webgpuSupported = await initManager.probeWebGPU();
       if (!webgpuSupported) {
@@ -192,4 +199,3 @@ export async function handleCommand(command) {
       return { ok: false, error: "unknown_command" };
   }
 }
-

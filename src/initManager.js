@@ -50,8 +50,6 @@ export class InitializationManager {
     this._ttsInitPromise = null;
     /** @type {boolean} */
     this._webgpuUnsupported = !navigator?.gpu;
-    /** @type {boolean} */
-    this._initFailed = false;
   }
 
   /**
@@ -83,10 +81,11 @@ export class InitializationManager {
 
   /**
    * Initializes TTS engine. Thread-safe via promise caching.
+   * If a previous attempt is in progress or completed, returns that result.
+   * On failure, clears the promise to allow retry.
    * @returns {Promise<boolean>} True if initialization succeeded
    */
   initTTS() {
-    if (this._initFailed) return Promise.resolve(false);
     if (this._ttsInitPromise) return this._ttsInitPromise;
 
     this._ttsInitPromise = (async () => {
@@ -103,8 +102,7 @@ export class InitializationManager {
       return true;
     })().catch((err) => {
       logger.error("TTS initialization failed:", err);
-      this._initFailed = true;
-      this._ttsInitPromise = null; // Allow retry
+      this._ttsInitPromise = null; // Allow retry on next call
       return false;
     });
 
@@ -116,7 +114,6 @@ export class InitializationManager {
    */
   reset() {
     this._ttsInitPromise = null;
-    this._initFailed = false;
   }
 
   /**
@@ -130,4 +127,3 @@ export class InitializationManager {
 
 /** Global initialization manager instance */
 export const initManager = new InitializationManager();
-

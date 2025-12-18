@@ -32,16 +32,7 @@ export const MESSAGE_TIMEOUT_MS = 30000;
 export const MESSAGE_SCOPE = "kokoro-tts";
 
 /** HTML tags to skip during text extraction */
-export const SKIP_TAGS = new Set([
-  "SCRIPT",
-  "STYLE",
-  "NOSCRIPT",
-  "IFRAME",
-  "SVG",
-  "CANVAS",
-  "VIDEO",
-  "AUDIO",
-]);
+export const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG", "CANVAS", "VIDEO", "AUDIO"]);
 
 /** Inline tags that don't create text blocks */
 export const SIMPLE_INLINE_TAGS = new Set([
@@ -81,6 +72,7 @@ export const VALID_MESSAGE_TYPES = [
   "kokoro:ping",
   "kokoro:getState",
   "kokoro:getModelStatus",
+  "kokoro:triggerModelInit",
   "kokoro:listVoices",
   "kokoro:playButtonPressed",
   "kokoro:setSpeed",
@@ -92,4 +84,3 @@ export const VALID_MESSAGE_TYPES = [
   "kokoro:initializeClickHandlers",
   "kokoro:executeCommand",
 ];
-

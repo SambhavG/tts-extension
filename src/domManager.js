@@ -4,7 +4,7 @@
  */
 
 import { logger } from "./logger.js";
-import { SKIP_TAGS, SIMPLE_INLINE_TAGS } from "./constants.js";
+import { DEFAULT_SETTINGS, SKIP_TAGS, SIMPLE_INLINE_TAGS } from "./constants.js";
 import { splitIntoSentences, sliceLongSentence } from "./textProcessing.js";
 
 /**
@@ -25,7 +25,7 @@ export class DomManager {
     /** @type {boolean} */
     this._autoScrollEnabled = true;
     /** @type {string} */
-    this._highlightColor = "#ffff00";
+    this._highlightColor = DEFAULT_SETTINGS.highlightColor;
     /** @type {string|null} */
     this._lastQueueHash = null;
     /** @type {QueueItem[]|null} */
@@ -203,6 +203,17 @@ export class DomManager {
     if (!forceRebuild && this._lastQueueHash === currentHash && this._cachedQueue) {
       logger.debug("Reusing cached queue");
       return this._cachedQueue;
+    }
+
+    // If content hash changed, clear any saved reading state
+    if (this._lastQueueHash && this._lastQueueHash !== currentHash) {
+      logger.debug("Content changed, clearing saved state");
+      try {
+        // Clear saved state for this page since content changed
+        chrome.storage.local.remove([`tts_state_${window.location.href}`]);
+      } catch (error) {
+        logger.warn("Failed to clear saved state on content change:", error);
+      }
     }
 
     const root = this.chooseRoot();
@@ -512,13 +523,8 @@ export class DomManager {
   _scrollIfEnabled(el) {
     if (!this._autoScrollEnabled) return;
 
-    const rect = el.getBoundingClientRect();
-    const viewHeight = window.innerHeight;
-    const isInView = rect.top >= 0 && rect.bottom <= viewHeight;
-
-    if (!isInView) {
-      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-    }
+    // Always scroll to center the highlighted element when auto-scroll is enabled
+    el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
   }
 
   /** @private */

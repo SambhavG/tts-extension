@@ -83,12 +83,21 @@ export class InitializationManager {
    * Initializes TTS engine. Thread-safe via promise caching.
    * If a previous attempt is in progress or completed, returns that result.
    * On failure, clears the promise to allow retry.
+   * Includes connection health checks and retry logic for stale connections.
    * @returns {Promise<boolean>} True if initialization succeeded
    */
   initTTS() {
     if (this._ttsInitPromise) return this._ttsInitPromise;
 
     this._ttsInitPromise = (async () => {
+      // First check connection health
+      const isHealthy = await this.checkConnectionHealth();
+      if (!isHealthy) {
+        logger.warn("Background connection unhealthy, resetting state");
+        this.reset();
+        return false;
+      }
+
       const webgpuSupported = await this.probeWebGPU();
       if (!webgpuSupported) return false;
 
@@ -110,10 +119,25 @@ export class InitializationManager {
   }
 
   /**
+   * Checks if the background script is responsive.
+   * @returns {Promise<boolean>} True if background script responds
+   */
+  async checkConnectionHealth() {
+    try {
+      await callBackground("ping", {}, 5000); // 5 second timeout for health check
+      return true;
+    } catch (error) {
+      logger.warn("Background script health check failed:", error);
+      return false;
+    }
+  }
+
+  /**
    * Resets initialization state to allow retry.
    */
   reset() {
     this._ttsInitPromise = null;
+    this._webgpuProbePromise = null;
   }
 
   /**

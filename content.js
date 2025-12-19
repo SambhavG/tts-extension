@@ -33,6 +33,26 @@ function initializeMessageListener() {
   });
 }
 
+/**
+ * Periodically checks connection health and resets state if needed.
+ */
+function startConnectionHealthMonitoring() {
+  // Check every 30 seconds
+  setInterval(async () => {
+    try {
+      const response = await handleMessage({ type: "kokoro:ping" });
+      if (!response?.ok) {
+        logger.warn("Connection health check failed, resetting state");
+        // Force reset by calling ensureConnectionHealth
+        await handleMessage({ type: "kokoro:getState" });
+      }
+    } catch (error) {
+      logger.warn("Connection health monitoring error:", error);
+    }
+  }, 30000);
+}
+
 // Initialize on load
 initializeMessageListener();
+startConnectionHealthMonitoring();
 logger.info("Kokoro TTS content script loaded");

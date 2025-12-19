@@ -78,7 +78,9 @@ async function refreshVoices() {
 
   const res = await sendToActiveTab({ type: "kokoro:listVoices" });
   if (!res?.ok) {
-    $voice.innerHTML = `<option value="">${res?.error || "TTS init failed"}</option>`;
+    const errorMsg =
+      res?.error === "connection_lost" ? "Connection lost - please refresh the page" : res?.error || "TTS init failed";
+    $voice.innerHTML = `<option value="">${errorMsg}</option>`;
     return;
   }
 
@@ -115,7 +117,7 @@ async function initState() {
   const speed = stored.kokoroSpeed ?? 1.0;
   const voice = stored.kokoroVoice ?? "af_heart";
   const autoScroll = stored.kokoroAutoScroll ?? true;
-  const highlightColor = stored.kokoroHighlightColor ?? "#ffff00";
+  const highlightColor = stored.kokoroHighlightColor ?? "#22a594";
 
   $autoScroll.checked = autoScroll;
   $highlightColor.value = highlightColor;
@@ -147,7 +149,14 @@ async function syncUIFromContent() {
   }
 
   const labels = { idle: "Read", playing: "Pause", paused: "Resume" };
-  $readButton.textContent = labels[res.state] || "Read";
+  let buttonText = labels[res.state] || "Read";
+
+  // Show position indicator if we have a saved reading position
+  if (res.state === "idle" && res.index >= 0 && res.total > 0) {
+    buttonText = `Resume (${res.index + 1}/${res.total})`;
+  }
+
+  $readButton.textContent = buttonText;
 }
 
 // --- Event handlers ---
@@ -188,37 +197,56 @@ $highlightColor.addEventListener("change", async () => {
 
 // --- Model status checking ---
 /**
- * Waits for model to be loaded, showing progress in the UI.
- * Returns a Promise that resolves when model is loaded (or rejects on error).
- * @returns {Promise<boolean>} True if model loaded successfully
+ * Initializes the popup UI, showing Resume button if state exists.
+ * @returns {Promise<boolean>} True if initialization successful
  */
-async function waitForModelLoaded() {
+async function initializePopup() {
   const injected = await ensureInjected();
   if (!injected) return false;
 
-  // Trigger model initialization in background (idempotent)
-  sendToActiveTab({ type: "kokoro:triggerModelInit" });
+  // Check if we have saved state
+  const stateRes = await sendToActiveTab({ type: "kokoro:getState" });
+  const hasSavedState = stateRes?.ok && stateRes.index >= 0 && stateRes.total > 0;
 
-  return new Promise((resolve) => {
-    async function poll() {
+  if (hasSavedState) {
+    // Show Resume button immediately
+    await syncUIFromContent();
+    // Start model loading in background (won't change UI)
+    loadModelInBackground();
+  } else {
+    // No saved state - show loading progress until model loads
+    loadModelWithProgress();
+  }
+
+  return true;
+}
+
+/**
+ * Loads the model and shows progress in the UI.
+ */
+async function loadModelWithProgress() {
+  try {
+    // Trigger model initialization
+    sendToActiveTab({ type: "kokoro:triggerModelInit" });
+
+    // Poll for completion and show appropriate UI
+    const pollForCompletion = async () => {
       const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
 
       if (res?.loaded) {
-        $readButton.textContent = "Read";
-        resolve(true);
+        // Model loaded successfully
+        await syncUIFromContent();
         return;
       }
 
       if (res?.webgpuUnsupported) {
         $readButton.innerHTML =
           '<span class="error-text">WebGPU is not available - please enable graphics acceleration at chrome://settings/system</span>';
-        resolve(false);
         return;
       }
 
       if (res?.cspError) {
         $readButton.innerHTML = '<span class="error-text">Failed to load, likely due to page\'s security policy</span>';
-        resolve(false);
         return;
       }
 
@@ -227,25 +255,57 @@ async function waitForModelLoaded() {
           <div class="download-progress">
             <span class="progress-text">Downloading TTS model...</span>
           </div>`;
-        setTimeout(poll, 200);
+        setTimeout(pollForCompletion, 200);
         return;
       }
 
+      // Still initializing - show loading animation
       $readButton.innerHTML = `
         <div class="sine-wave">
           ${Array(8).fill('<span class="wave-bar"></span>').join("")}
         </div>`;
-      setTimeout(poll, 600);
-    }
+      setTimeout(pollForCompletion, 600);
+    };
 
-    poll();
-  });
+    pollForCompletion();
+  } catch (error) {
+    $readButton.innerHTML = '<span class="error-text">Failed to load TTS model</span>';
+    console.error("Model loading failed:", error);
+  }
+}
+
+/**
+ * Loads the model in the background without blocking the UI (for when Resume is already shown).
+ */
+async function loadModelInBackground() {
+  try {
+    // Trigger model initialization
+    sendToActiveTab({ type: "kokoro:triggerModelInit" });
+
+    // Poll for completion but don't change UI since Resume is already shown
+    const pollForCompletion = async () => {
+      const res = await sendToActiveTab({ type: "kokoro:getModelStatus" });
+      if (res?.loaded) {
+        // Model loaded, update UI if needed
+        await syncUIFromContent();
+        return;
+      }
+
+      // Continue polling
+      setTimeout(pollForCompletion, 1000);
+    };
+
+    pollForCompletion();
+  } catch (error) {
+    // Silently fail - the Resume button will still work
+    console.warn("Background model loading failed:", error);
+  }
 }
 
 // --- Initialize ---
 (async function init() {
-  const modelLoaded = await waitForModelLoaded();
-  if (!modelLoaded) return; // Error already shown in UI
+  const initialized = await initializePopup();
+  if (!initialized) return;
 
   await initState();
   await refreshVoices();

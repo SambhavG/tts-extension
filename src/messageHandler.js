@@ -8,6 +8,9 @@ import { VALID_MESSAGE_TYPES } from "./constants.js";
 import { initManager, callBackground } from "./initManager.js";
 import { TtsController, createTtsController } from "./ttsController.js";
 
+/** @type {boolean} */
+let _connectionHealthy = true;
+
 /**
  * @typedef {import('./types.js').MessagePayload} MessagePayload
  */
@@ -34,6 +37,38 @@ export function destroyController() {
     controller.dispose();
     controller = null;
   }
+}
+
+/**
+ * Checks connection health and handles restoration conservatively.
+ * Only resets state if connection cannot be restored.
+ * @returns {Promise<boolean>} True if connection is healthy
+ */
+async function ensureConnectionHealth() {
+  if (!_connectionHealthy) {
+    // Try to restore connection without resetting state
+    const healthy = await initManager.checkConnectionHealth();
+    if (healthy) {
+      _connectionHealthy = true;
+      logger.info("Connection restored - state preserved");
+      // Only reset initialization promises, not the controller state
+      initManager.reset();
+      return true;
+    }
+    // If we can't restore connection, return false but don't destroy controller yet
+    return false;
+  }
+
+  // Periodic health check
+  const healthy = await initManager.checkConnectionHealth();
+  if (!healthy) {
+    _connectionHealthy = false;
+    logger.warn("Connection lost - will attempt restoration on next operation");
+    // Don't reset state immediately - let operations handle it
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -67,6 +102,20 @@ export async function handleMessage(msg) {
   if (!isValidMessage(msg)) {
     logger.warn("Invalid message received:", msg?.type);
     return { ok: false, error: "invalid_message" };
+  }
+
+  // Check connection health for most operations
+  if (msg.type !== "kokoro:ping") {
+    const healthy = await ensureConnectionHealth();
+    if (!healthy) {
+      // Try one more time to restore connection before failing
+      const retryHealthy = await initManager.checkConnectionHealth();
+      if (!retryHealthy) {
+        return { ok: false, error: "connection_lost" };
+      }
+      _connectionHealthy = true;
+      initManager.reset(); // Reset init state but preserve controller
+    }
   }
 
   if (msg.type === "kokoro:executeCommand") {
@@ -119,7 +168,9 @@ export async function handleMessage(msg) {
 
     case "kokoro:playButtonPressed": {
       if (ctrl.state === "idle") {
-        return ctrl.start(msg.settings || {});
+        // If we have a saved position, resume from there
+        const startIndex = ctrl.currentIndex >= 0 ? ctrl.currentIndex : 0;
+        return ctrl.start(msg.settings || {}, startIndex);
       }
       if (ctrl.state === "playing") return ctrl.pause();
       if (ctrl.state === "paused") return ctrl.resume();

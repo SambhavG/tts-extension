@@ -209,6 +209,9 @@ async function handleMessage(message) {
   const { type, payload } = message;
 
   switch (type) {
+    case "ping":
+      return { ok: true };
+
     case "init":
       await initTTS(payload?.modelId, payload?.dtype, payload?.device);
       return { ok: true };

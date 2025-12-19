@@ -50,6 +50,8 @@ export class TtsController {
     this._operationQueue = Promise.resolve();
     /** @type {number} - Increments on each operation to detect stale completions */
     this._operationId = 0;
+    /** @type {boolean} - Whether we've attempted to restore state for this page */
+    this._stateRestored = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -105,7 +107,16 @@ export class TtsController {
    * @returns {Promise<{ok: boolean, error?: string}>}
    */
   async initializeClickHandlers() {
-    // Build queue if not already built
+    // Try to restore state on first initialization
+    if (!this._stateRestored) {
+      this._stateRestored = true;
+      const restored = await this.restoreReadingState();
+      if (restored) {
+        logger.info("Successfully restored reading state");
+      }
+    }
+
+    // Build queue if not already built (or rebuild if we restored state)
     if (!this._queue.length) {
       this._queue = this._dom.buildQueue();
     }
@@ -302,6 +313,7 @@ export class TtsController {
   setSpeed(speed) {
     this._settings.speed = Math.max(0.1, Math.min(Number(speed) || 1.0, 4.0));
     this._audio.setPlaybackRate(this._settings.speed);
+    this._saveReadingState();
   }
 
   /**
@@ -314,6 +326,7 @@ export class TtsController {
       this._settings.voice = newVoice;
       // Clear cache when voice changes to prevent old voice audio from being used
       this._resetGenerationTracking();
+      this._saveReadingState();
     }
   }
 
@@ -323,6 +336,7 @@ export class TtsController {
    */
   setAutoScroll(enabled) {
     this._dom.setAutoScroll(enabled);
+    this._saveReadingState();
   }
 
   /**
@@ -332,6 +346,7 @@ export class TtsController {
   setHighlightColor(color) {
     this._settings.highlightColor = color;
     this._dom.setHighlightColor(color);
+    this._saveReadingState();
   }
 
   /**
@@ -372,9 +387,108 @@ export class TtsController {
   }
 
   /**
+   * Saves the current reading state to persistent storage.
+   * @private
+   */
+  async _saveReadingState() {
+    try {
+      const pageUrl = window.location.href;
+      const contentHash = this._dom._computeContentHash();
+
+      const state = {
+        url: pageUrl,
+        contentHash: contentHash,
+        index: this._idx,
+        settings: { ...this._settings },
+        queueLength: this._queue.length,
+        timestamp: Date.now(),
+      };
+
+      // Only save if we have a meaningful state (not idle with no queue)
+      if (this._queue.length > 0 && this._idx >= 0) {
+        await chrome.storage.local.set({ [`tts_state_${pageUrl}`]: state });
+        logger.debug("Saved reading state", { index: this._idx, queueLength: this._queue.length });
+      }
+    } catch (error) {
+      logger.warn("Failed to save reading state:", error);
+    }
+  }
+
+  /**
+   * Restores reading state from persistent storage if content hasn't changed.
+   * @returns {Promise<boolean>} True if state was restored
+   */
+  async restoreReadingState() {
+    try {
+      const pageUrl = window.location.href;
+      const contentHash = this._dom._computeContentHash();
+
+      const result = await chrome.storage.local.get([`tts_state_${pageUrl}`]);
+      const savedState = result[`tts_state_${pageUrl}`];
+
+      if (!savedState) {
+        logger.debug("No saved state found");
+        return false;
+      }
+
+      // Check if state is still valid
+      if (savedState.url !== pageUrl || savedState.contentHash !== contentHash) {
+        logger.debug("Saved state is stale (URL or content changed)");
+        await this._clearSavedState();
+        return false;
+      }
+
+      // Check if state is too old (24 hours)
+      const age = Date.now() - savedState.timestamp;
+      if (age > 24 * 60 * 60 * 1000) {
+        logger.debug("Saved state is too old");
+        await this._clearSavedState();
+        return false;
+      }
+
+      // Restore settings
+      Object.assign(this._settings, savedState.settings);
+
+      // Build queue and try to restore position
+      this._queue = this._dom.buildQueue();
+
+      if (
+        this._queue.length === savedState.queueLength &&
+        savedState.index >= 0 &&
+        savedState.index < this._queue.length
+      ) {
+        this._idx = savedState.index;
+        logger.info(`Restored reading state: index ${this._idx} of ${this._queue.length} items`);
+        return true;
+      } else {
+        logger.debug("Could not restore position - queue structure changed");
+        await this._clearSavedState();
+        return false;
+      }
+    } catch (error) {
+      logger.warn("Failed to restore reading state:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Clears saved reading state for current page.
+   * @private
+   */
+  async _clearSavedState() {
+    try {
+      const pageUrl = window.location.href;
+      await chrome.storage.local.remove([`tts_state_${pageUrl}`]);
+    } catch (error) {
+      logger.warn("Failed to clear saved state:", error);
+    }
+  }
+
+  /**
    * Disposes all resources.
    */
   dispose() {
+    this._saveReadingState(); // Save state before disposing
     this.stop();
     this._audio.dispose();
     this._queue = [];
@@ -389,6 +503,10 @@ export class TtsController {
   _setState(newState) {
     this._state = newState;
     this._flushStateWaiters();
+    // Save state when playback state changes
+    if (newState === "idle" || newState === "playing" || newState === "paused") {
+      this._saveReadingState();
+    }
   }
 
   /** @private */
@@ -626,4 +744,3 @@ export function createTtsController() {
   const audioEngine = new AudioEngine();
   return new TtsController(domManager, audioEngine);
 }
-

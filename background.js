@@ -1,12 +1,14 @@
 // Suppress ONNX Runtime warnings by intercepting console.warn
 const originalWarn = console.warn;
-console.warn = function(...args) {
+console.warn = function (...args) {
   // Suppress specific ONNX Runtime warnings
-  const message = args.join(' ');
-  if (message.includes('onnxruntime') &&
-      (message.includes('Some nodes were not assigned to the preferred execution providers') ||
-       message.includes('Rerunning with verbose output on a non-minimal build will show node assignments') ||
-       message.includes('VerifyEachNodeIsAssignedToAnEp'))) {
+  const message = args.join(" ");
+  if (
+    message.includes("onnxruntime") &&
+    (message.includes("Some nodes were not assigned to the preferred execution providers") ||
+      message.includes("Rerunning with verbose output on a non-minimal build will show node assignments") ||
+      message.includes("VerifyEachNodeIsAssignedToAnEp"))
+  ) {
     return; // Suppress these warnings
   }
   // Call original warn for other messages
@@ -25,22 +27,76 @@ let downloadProgress = { status: "idle", loaded: 0, total: 0 };
 
 // --- Greek letter mapping ---
 const GREEK_LETTER_NAMES = new Map([
-  ["α", "alpha"], ["β", "beta"], ["γ", "gamma"], ["δ", "delta"], ["ε", "epsilon"],
-  ["ζ", "zeta"], ["η", "eta"], ["θ", "theta"], ["ι", "iota"], ["κ", "kappa"],
-  ["λ", "lambda"], ["μ", "mu"], ["ν", "nu"], ["ξ", "xi"], ["ο", "omicron"],
-  ["π", "pi"], ["ρ", "rho"], ["σ", "sigma"], ["ς", "sigma"], ["τ", "tau"],
-  ["υ", "upsilon"], ["φ", "phi"], ["χ", "chi"], ["ψ", "psi"], ["ω", "omega"],
-  ["ϝ", "digamma"], ["ϛ", "stigma"], ["ϟ", "koppa"], ["ϡ", "sampi"],
-  ["ϙ", "qoppa"], ["ϗ", "kai"], ["ϳ", "yot"],
+  ["α", "alpha"],
+  ["β", "beta"],
+  ["γ", "gamma"],
+  ["δ", "delta"],
+  ["ε", "epsilon"],
+  ["ζ", "zeta"],
+  ["η", "eta"],
+  ["θ", "theta"],
+  ["ι", "iota"],
+  ["κ", "kappa"],
+  ["λ", "lambda"],
+  ["μ", "mu"],
+  ["ν", "nu"],
+  ["ξ", "xi"],
+  ["ο", "omicron"],
+  ["π", "pi"],
+  ["ρ", "rho"],
+  ["σ", "sigma"],
+  ["ς", "sigma"],
+  ["τ", "tau"],
+  ["υ", "upsilon"],
+  ["φ", "phi"],
+  ["χ", "chi"],
+  ["ψ", "psi"],
+  ["ω", "omega"],
+  ["ϝ", "digamma"],
+  ["ϛ", "stigma"],
+  ["ϟ", "koppa"],
+  ["ϡ", "sampi"],
+  ["ϙ", "qoppa"],
+  ["ϗ", "kai"],
+  ["ϳ", "yot"],
 ]);
 
 const GREEK_VARIANT_TO_BASE = new Map([
-  ["ϐ", "β"], ["ϑ", "θ"], ["ϒ", "Υ"], ["ϓ", "Υ"], ["ϔ", "Υ"], ["ϕ", "φ"],
-  ["ϖ", "π"], ["ϰ", "κ"], ["ϱ", "ρ"], ["ϲ", "σ"], ["ϵ", "ε"], ["϶", "ε"],
-  ["ϴ", "Θ"], ["Ϲ", "Σ"], ["Ϻ", "Μ"], ["ϻ", "μ"], ["𝜓", "ψ"], ["𝜒", "χ"],
-  ["𝜔", "ω"], ["𝜁", "ζ"], ["𝜂", "η"], ["𝜃", "θ"], ["𝜄", "ι"], ["𝜆", "λ"],
-  ["𝜇", "μ"], ["𝜈", "ν"], ["𝜉", "ξ"], ["𝜊", "ο"], ["𝜋", "π"], ["𝜌", "ρ"],
-  ["𝜍", "σ"], ["𝜎", "σ"], ["𝜏", "τ"], ["𝜐", "υ"], ["𝜑", "φ"],
+  ["ϐ", "β"],
+  ["ϑ", "θ"],
+  ["ϒ", "Υ"],
+  ["ϓ", "Υ"],
+  ["ϔ", "Υ"],
+  ["ϕ", "φ"],
+  ["ϖ", "π"],
+  ["ϰ", "κ"],
+  ["ϱ", "ρ"],
+  ["ϲ", "σ"],
+  ["ϵ", "ε"],
+  ["϶", "ε"],
+  ["ϴ", "Θ"],
+  ["Ϲ", "Σ"],
+  ["Ϻ", "Μ"],
+  ["ϻ", "μ"],
+  ["𝜓", "ψ"],
+  ["𝜒", "χ"],
+  ["𝜔", "ω"],
+  ["𝜁", "ζ"],
+  ["𝜂", "η"],
+  ["𝜃", "θ"],
+  ["𝜄", "ι"],
+  ["𝜆", "λ"],
+  ["𝜇", "μ"],
+  ["𝜈", "ν"],
+  ["𝜉", "ξ"],
+  ["𝜊", "ο"],
+  ["𝜋", "π"],
+  ["𝜌", "ρ"],
+  ["𝜍", "σ"],
+  ["𝜎", "σ"],
+  ["𝜏", "τ"],
+  ["𝜐", "υ"],
+  ["𝜑", "φ"],
 ]);
 
 const GREEK_SCRIPT_REGEX = /\p{Script=Greek}/u;
@@ -102,14 +158,16 @@ async function initTTS(modelId, dtype, device) {
         downloadProgress = { status: "idle", loaded: 0, total: 0 };
       }
     },
-  }).then((instance) => {
-    ttsInstance = instance;
-    downloadProgress = { status: "idle", loaded: 0, total: 0 };
-    return instance;
-  }).catch((error) => {
-    downloadProgress = { status: "idle", loaded: 0, total: 0 };
-    throw error;
-  });
+  })
+    .then((instance) => {
+      ttsInstance = instance;
+      downloadProgress = { status: "idle", loaded: 0, total: 0 };
+      return instance;
+    })
+    .catch((error) => {
+      downloadProgress = { status: "idle", loaded: 0, total: 0 };
+      throw error;
+    });
 
   return initPromise;
 }
@@ -175,9 +233,7 @@ async function generateBatch(sentences, voice) {
   const cleaned = cleanSentences(sentences);
   const items = cleaned.length ? cleaned : [""];
 
-  const results = await Promise.all(
-    items.map((s) => ttsInstance.generate(s, { voice: voice || "af_heart" }))
-  );
+  const results = await Promise.all(items.map((s) => ttsInstance.generate(s, { voice: voice || "af_heart" })));
 
   let sampleRate = 24000;
   let totalLength = 0;

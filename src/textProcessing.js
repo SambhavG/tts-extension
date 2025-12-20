@@ -36,12 +36,17 @@ export function splitIntoSentences(text) {
   const segmenter = getSentenceSegmenter();
   if (segmenter) {
     const segments = [...segmenter.segment(normalized)].map((s) => s.segment.trim()).filter(Boolean);
-    return segments.length ? segments : [normalized];
+    // Further split segments on em dashes to create pauses
+    const finalSegments = [];
+    for (const segment of segments) {
+      finalSegments.push(...segment.split(/—|——/).map(s => s.trim()).filter(Boolean));
+    }
+    return finalSegments.length ? finalSegments : [normalized];
   }
 
   // Fallback for older browsers
   const sentences = normalized
-    .split(/(?<=[.!?…])\s+(?=[A-Z0-9""([])|(?<=\n)\s*|(?<=—)\s*|(?<=--)\s*/g)
+    .split(/(?<=[.!?…—])\s+(?=[A-Z0-9""([])|(?<=\n)\s*|—|——/g)
     .map((s) => s.trim())
     .filter(Boolean);
   return sentences.length ? sentences : [normalized];

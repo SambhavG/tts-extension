@@ -35,6 +35,21 @@ function isRestrictedUrl(url) {
   return RESTRICTED_PREFIXES.some((prefix) => url?.startsWith(prefix));
 }
 
+function isPdfUrl(url) {
+  if (!url) return false;
+  try {
+    const urlObj = new URL(url);
+    const cleanPath = urlObj.pathname.toLowerCase();
+    return (
+      cleanPath.endsWith(".pdf") ||
+      (urlObj.protocol === "chrome-extension:" && url.includes("pdf")) ||
+      (urlObj.protocol === "file:" && cleanPath.endsWith(".pdf"))
+    );
+  } catch (e) {
+    return url.toLowerCase().endsWith(".pdf");
+  }
+}
+
 async function ensureInjected() {
   const tab = await getActiveTab();
   if (!tab?.id) return false;
@@ -304,6 +319,19 @@ async function loadModelInBackground() {
 
 // --- Initialize ---
 (async function init() {
+  const tab = await getActiveTab();
+  if (tab && isPdfUrl(tab.url)) {
+    const $main = document.querySelector("main");
+    if ($main) {
+      $main.innerHTML = `
+        <div class="pdf-warning">
+          <p>Extensions can't directly read PDFs. Instead, Ctrl/Cmd+A and paste into <a href="https://markdownlivepreview.com" target="_blank">markdownlivepreview.com</a></p>
+        </div>
+      `;
+    }
+    return;
+  }
+
   const initialized = await initializePopup();
   if (!initialized) return;
 

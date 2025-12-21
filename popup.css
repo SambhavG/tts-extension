@@ -399,3 +399,33 @@ kbd {
   text-align: center;
   line-height: 1.2;
 }
+
+/* PDF Warning */
+.pdf-warning {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+}
+
+.pdf-warning p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.pdf-warning a {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: 700;
+  border-bottom: 1.5px solid rgba(45, 212, 191, 0.3);
+  transition: all 0.2s ease;
+}
+
+.pdf-warning a:hover {
+  color: var(--primary-hover);
+  border-bottom-color: var(--primary-hover);
+}

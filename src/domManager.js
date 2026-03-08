@@ -224,7 +224,8 @@ export class DomManager {
     for (const c of containers) {
       for (const sentence of splitIntoSentences(c.text)) {
         // Skip sentences that contain no letters or digits (like "...")
-        if (!/[a-zA-Z0-9]/.test(sentence)) {
+        // Uses Unicode-aware check to support non-Latin scripts
+        if (!/[\p{L}\p{N}]/u.test(sentence)) {
           continue;
         }
         for (const chunk of sliceLongSentence(sentence)) {

@@ -5,6 +5,7 @@ const $ = (id) => document.getElementById(id);
 const $voice = $("voice");
 const $speed = $("speed");
 const $readButton = $("read-button");
+const $stopButton = $("stop-button");
 const $autoScroll = $("auto-scroll");
 const $highlightColor = $("highlight-color");
 
@@ -113,19 +114,6 @@ async function refreshVoices() {
   if (pick && voices.includes(pick)) $voice.value = pick;
 }
 
-// --- Color utility functions ---
-function isColorLight(hexColor) {
-  // Remove # if present
-  const hex = hexColor.replace("#", "");
-  // Convert to RGB
-  const r = parseInt(hex.substr(0, 2), 16);
-  const g = parseInt(hex.substr(2, 2), 16);
-  const b = parseInt(hex.substr(4, 2), 16);
-  // Calculate luminance using the formula for perceived brightness
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5; // Light if above 50% brightness
-}
-
 // --- UI state management ---
 async function initState() {
   const stored = await api.storage.sync.get(["kokoroSpeed", "kokoroVoice", "kokoroAutoScroll", "kokoroHighlightColor"]);
@@ -172,12 +160,21 @@ async function syncUIFromContent() {
   }
 
   $readButton.textContent = buttonText;
+
+  // Show/hide stop button based on playback state
+  $stopButton.style.display = (res.state === "playing" || res.state === "paused") ? "" : "none";
 }
 
 // --- Event handlers ---
 $readButton.addEventListener("click", async () => {
   if (!(await ensureInjected())) return;
   await sendToActiveTab({ type: "kokoro:playButtonPressed" });
+  syncUIFromContent();
+});
+
+$stopButton.addEventListener("click", async () => {
+  if (!(await ensureInjected())) return;
+  await sendToActiveTab({ type: "kokoro:executeCommand", command: "stop-read" });
   syncUIFromContent();
 });
 
@@ -266,9 +263,13 @@ async function loadModelWithProgress() {
       }
 
       if (res?.downloadProgress) {
+        const { loaded, total } = res.downloadProgress;
+        const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+        const pctText = total > 0 ? `${pct}%` : "";
         $readButton.innerHTML = `
           <div class="download-progress">
-            <span class="progress-text">Downloading TTS model...</span>
+            <span class="progress-text">Downloading TTS model... ${pctText}</span>
+            ${total > 0 ? `<div class="progress-bar-container"><div class="progress-bar-fill" style="width: ${pct}%"></div></div>` : ""}
           </div>`;
         setTimeout(pollForCompletion, 200);
         return;
@@ -319,22 +320,27 @@ async function loadModelInBackground() {
 
 // --- Initialize ---
 (async function init() {
-  const tab = await getActiveTab();
-  if (tab && isPdfUrl(tab.url)) {
-    const $main = document.querySelector("main");
-    if ($main) {
-      $main.innerHTML = `
-        <div class="pdf-warning">
-          <p>Extensions can't directly read PDFs. Instead, Ctrl/Cmd+A and paste into <a href="https://markdownlivepreview.com" target="_blank">markdownlivepreview.com</a></p>
-        </div>
-      `;
+  try {
+    const tab = await getActiveTab();
+    if (tab && isPdfUrl(tab.url)) {
+      const $main = document.querySelector("main");
+      if ($main) {
+        $main.innerHTML = `
+          <div class="pdf-warning">
+            <p>Extensions can't directly read PDFs. Instead, Ctrl/Cmd+A and paste into <a href="https://markdownlivepreview.com" target="_blank">markdownlivepreview.com</a></p>
+          </div>
+        `;
+      }
+      return;
     }
-    return;
+
+    const initialized = await initializePopup();
+    if (!initialized) return;
+
+    await initState();
+    await refreshVoices();
+  } catch (error) {
+    console.error("Popup initialization failed:", error);
+    $readButton.innerHTML = '<span class="error-text">Initialization failed. Try reloading the page.</span>';
   }
-
-  const initialized = await initializePopup();
-  if (!initialized) return;
-
-  await initState();
-  await refreshVoices();
 })();

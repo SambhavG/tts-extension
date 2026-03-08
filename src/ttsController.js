@@ -728,9 +728,10 @@ export class TtsController {
   _cleanup() {
     this._audio.stopActiveAudio();
     this._dom.clearHighlight();
+    // Save reading state before resetting index so position is preserved
+    this._saveReadingState();
     this._state = "idle";
     this._abortController = null;
-    this._idx = -1;
     this._flushStateWaiters();
   }
 }

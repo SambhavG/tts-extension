@@ -717,19 +717,28 @@ export class TtsController {
 
     if (!signal.aborted) {
       logger.debug("Playback loop completed naturally");
-      this._cleanup();
+      this._cleanup(true);
     }
   }
 
   /**
    * Cleans up playback state.
    * @private
+   * @param {boolean} [naturalCompletion=false] - Whether playback finished naturally (all items played)
    */
-  _cleanup() {
+  _cleanup(naturalCompletion = false) {
     this._audio.stopActiveAudio();
     this._dom.clearHighlight();
-    // Save reading state before resetting index so position is preserved
-    this._saveReadingState();
+
+    if (naturalCompletion) {
+      // Playback finished all items — reset position so next press starts from beginning
+      this._idx = -1;
+      this._clearSavedState();
+    } else {
+      // Explicit stop — save position so user can resume later
+      this._saveReadingState();
+    }
+
     this._state = "idle";
     this._abortController = null;
     this._flushStateWaiters();

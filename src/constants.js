@@ -34,6 +34,15 @@ export const MESSAGE_SCOPE = "kokoro-tts";
 /** HTML tags to skip during text extraction */
 export const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG", "CANVAS", "VIDEO", "AUDIO"]);
 
+/** Block-level HTML tags that create text boundaries */
+export const BLOCK_TAGS = new Set([
+  "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DD", "DETAILS",
+  "DIALOG", "DIV", "DL", "DT", "FIELDSET", "FIGCAPTION", "FIGURE",
+  "FOOTER", "FORM", "H1", "H2", "H3", "H4", "H5", "H6", "HEADER",
+  "HGROUP", "HR", "LI", "MAIN", "NAV", "OL", "P", "PRE", "SECTION",
+  "SUMMARY", "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR", "UL",
+]);
+
 /** Inline tags that don't create text blocks */
 export const SIMPLE_INLINE_TAGS = new Set([
   "A",
@@ -83,4 +92,5 @@ export const VALID_MESSAGE_TYPES = [
   "kokoro:clearCache",
   "kokoro:initializeClickHandlers",
   "kokoro:executeCommand",
+  "kokoro:setClickToRead",
 ];

@@ -548,7 +548,7 @@ export class DomManager {
     for (const child of el.childNodes) {
       if (child.nodeType === Node.TEXT_NODE) {
         const t = child.textContent || "";
-        if (t.trim()) runTexts.push(t);
+        if (t) runTexts.push(t);
       } else if (child.nodeType === Node.ELEMENT_NODE && child instanceof HTMLElement) {
         if (SKIP_TAGS.has(child.tagName)) continue;
         if (!this._isVisible(child)) continue;

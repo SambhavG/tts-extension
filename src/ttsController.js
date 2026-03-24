@@ -345,6 +345,24 @@ export class TtsController {
   }
 
   /**
+   * Sets the maximum chunk length for sentence slicing.
+   * When changed while idle with a saved position, resets the queue
+   * and clears saved state to avoid stale index after re-chunking.
+   * @param {number} length
+   */
+  setMaxChunkLength(length) {
+    const oldLength = this._dom._maxChunkLength;
+    this._dom.setMaxChunkLength(length);
+    // If the value actually changed and we have a stale queue, reset it
+    if (this._dom._maxChunkLength !== oldLength && this._queue.length) {
+      this._queue = [];
+      this._idx = -1;
+      this._resetGenerationTracking();
+      this._clearSavedState();
+    }
+  }
+
+  /**
    * Sets auto-scroll.
    * @param {boolean} enabled
    */
@@ -434,6 +452,16 @@ export class TtsController {
    */
   async restoreReadingState() {
     try {
+      // Read stored maxChunkLength so the queue is built with the correct
+      // chunk size even if the popup hasn't sent setMaxChunkLength yet
+      // (e.g. content script just injected for the first time).
+      try {
+        const syncData = await chrome.storage.sync.get("kokoroMaxChunkLength");
+        if (syncData.kokoroMaxChunkLength != null) {
+          this._dom.setMaxChunkLength(syncData.kokoroMaxChunkLength);
+        }
+      } catch (_) { /* storage may not be available */ }
+
       const pageUrl = window.location.href;
       const contentHash = this._dom._computeContentHash();
 

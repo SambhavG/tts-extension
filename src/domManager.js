@@ -4,7 +4,7 @@
  */
 
 import { logger } from "./logger.js";
-import { DEFAULT_SETTINGS, SKIP_TAGS, BLOCK_TAGS } from "./constants.js";
+import { DEFAULT_SETTINGS, SKIP_TAGS, BLOCK_TAGS, SENTENCE_MAX_LENGTH } from "./constants.js";
 import { splitIntoSentences, sliceLongSentence } from "./textProcessing.js";
 
 /**
@@ -36,6 +36,8 @@ export class DomManager {
     this._highlightThrottleMs = 16;
     /** @type {boolean} */
     this._clickToReadEnabled = true;
+    /** @type {number} */
+    this._maxChunkLength = SENTENCE_MAX_LENGTH;
 
     // Initialize default highlight styles
     this._updateHighlightStyles();
@@ -174,6 +176,20 @@ export class DomManager {
   }
 
   /**
+   * Sets the maximum chunk length for sentence slicing.
+   * Invalidates the queue cache so the next buildQueue() re-chunks.
+   * @param {number} length
+   */
+  setMaxChunkLength(length) {
+    const clamped = Math.max(50, Math.min(Number(length) || SENTENCE_MAX_LENGTH, SENTENCE_MAX_LENGTH));
+    if (clamped !== this._maxChunkLength) {
+      this._maxChunkLength = clamped;
+      this._lastQueueHash = null;
+      this._cachedQueue = null;
+    }
+  }
+
+  /**
    * Enables or disables click-to-read mode.
    * Toggles the visual clickable cursor on already-bound elements.
    * @param {boolean} enabled
@@ -238,7 +254,7 @@ export class DomManager {
         if (!/[\p{L}\p{N}]/u.test(sentence)) {
           continue;
         }
-        for (const chunk of sliceLongSentence(sentence)) {
+        for (const chunk of sliceLongSentence(sentence, this._maxChunkLength)) {
           queue.push({
             xpath: c.xpath,
             elRef: new WeakRef(c.el),

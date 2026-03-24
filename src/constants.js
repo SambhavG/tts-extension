@@ -93,4 +93,5 @@ export const VALID_MESSAGE_TYPES = [
   "kokoro:initializeClickHandlers",
   "kokoro:executeCommand",
   "kokoro:setClickToRead",
+  "kokoro:setMaxChunkLength",
 ];

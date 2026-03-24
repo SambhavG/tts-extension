@@ -248,6 +248,7 @@ input:focus + .toggle-track {
 .action-area {
   display: flex;
   justify-content: center;
+  gap: 8px;
 }
 
 .primary-button {
@@ -290,6 +291,28 @@ input:focus + .toggle-track {
   box-shadow: none;
   transform: none;
   margin-bottom: 0;
+}
+
+/* Stop Button */
+.stop-button {
+  width: 80px;
+  flex-shrink: 0;
+  padding: 14px 12px;
+  background: var(--surface-color);
+  color: var(--danger-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stop-button:hover {
+  background: var(--surface-hover);
+  border-color: var(--danger-color);
 }
 
 /* Shortcuts & Info */

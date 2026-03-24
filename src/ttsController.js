@@ -52,6 +52,8 @@ export class TtsController {
     this._operationId = 0;
     /** @type {boolean} - Whether we've attempted to restore state for this page */
     this._stateRestored = false;
+    /** @type {boolean} - Whether click-to-read mode is enabled */
+    this._clickToReadEnabled = true;
   }
 
   // ---------------------------------------------------------------------------
@@ -125,9 +127,9 @@ export class TtsController {
       return { ok: false, error: "No readable text found on this page." };
     }
 
-    // Bind click handlers
+    // Bind click handlers (respects click-to-read toggle)
     this._dom.bindClickHandlers(this._queue, (idx) => {
-      // Only start playback if we're not already playing
+      if (!this._clickToReadEnabled) return;
       if (this._state === "idle") {
         this.start({}, idx);
       } else {
@@ -177,7 +179,10 @@ export class TtsController {
       return { ok: false, error: "No readable text found on this page." };
     }
 
-    this._dom.bindClickHandlers(this._queue, (idx) => this.jumpTo(idx));
+    this._dom.bindClickHandlers(this._queue, (idx) => {
+      if (!this._clickToReadEnabled) return;
+      this.jumpTo(idx);
+    });
 
     this._setState("playing");
     this._abortController = new AbortController();
@@ -328,6 +333,15 @@ export class TtsController {
       this._resetGenerationTracking();
       this._saveReadingState();
     }
+  }
+
+  /**
+   * Sets click-to-read mode.
+   * @param {boolean} enabled
+   */
+  setClickToRead(enabled) {
+    this._clickToReadEnabled = enabled;
+    this._dom.setClickToRead(enabled);
   }
 
   /**
@@ -717,20 +731,30 @@ export class TtsController {
 
     if (!signal.aborted) {
       logger.debug("Playback loop completed naturally");
-      this._cleanup();
+      this._cleanup(true);
     }
   }
 
   /**
    * Cleans up playback state.
    * @private
+   * @param {boolean} [naturalCompletion=false] - Whether playback finished naturally (all items played)
    */
-  _cleanup() {
+  _cleanup(naturalCompletion = false) {
     this._audio.stopActiveAudio();
     this._dom.clearHighlight();
+
+    if (naturalCompletion) {
+      // Playback finished all items — reset position so next press starts from beginning
+      this._idx = -1;
+      this._clearSavedState();
+    } else {
+      // Explicit stop — save position so user can resume later
+      this._saveReadingState();
+    }
+
     this._state = "idle";
     this._abortController = null;
-    this._idx = -1;
     this._flushStateWaiters();
   }
 }

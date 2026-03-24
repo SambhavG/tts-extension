@@ -4,7 +4,7 @@
  */
 
 import { logger } from "./logger.js";
-import { DEFAULT_SETTINGS, SKIP_TAGS, SIMPLE_INLINE_TAGS } from "./constants.js";
+import { DEFAULT_SETTINGS, SKIP_TAGS, BLOCK_TAGS } from "./constants.js";
 import { splitIntoSentences, sliceLongSentence } from "./textProcessing.js";
 
 /**
@@ -34,6 +34,8 @@ export class DomManager {
     this._lastHighlightTime = 0;
     /** Minimum ms between highlight updates */
     this._highlightThrottleMs = 16;
+    /** @type {boolean} */
+    this._clickToReadEnabled = true;
 
     // Initialize default highlight styles
     this._updateHighlightStyles();
@@ -155,29 +157,37 @@ export class DomManager {
   }
 
   /**
-   * Collects text containers from the root element.
+   * Collects text containers from the root element using recursive block
+   * decomposition.  When a block element contains a mix of direct text /
+   * inline children AND child block elements, the direct text is emitted as
+   * its own container so it is not lost when we recurse into the child
+   * blocks.
+   *
    * @param {HTMLElement} root
    * @returns {TextContainer[]}
    */
   collectTextContainers(root) {
-    const metaList = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
-    let node;
+    /** @type {TextContainer[]} */
+    const containers = [];
+    this._collectBlocks(root, containers);
+    return containers;
+  }
 
-    while ((node = walker.nextNode())) {
-      const meta = this._getCandidateTextMeta(node);
-      if (meta) metaList.push(meta);
-    }
-
-    const blockMeta = metaList.filter((m) => m.isBlock);
-    const pool = blockMeta.length ? blockMeta : metaList;
-    const keep = pool.filter((meta) => !pool.some((other) => other !== meta && this._isAncestorOf(meta.el, other.el)));
-
-    return keep.map((meta) => ({
-      xpath: this._generateXPath(meta.el),
-      el: meta.el,
-      text: meta.text,
-    }));
+  /**
+   * Enables or disables click-to-read mode.
+   * Toggles the visual clickable cursor on already-bound elements.
+   * @param {boolean} enabled
+   */
+  setClickToRead(enabled) {
+    this._clickToReadEnabled = enabled;
+    const boundEls = document.querySelectorAll('[data-kokoro-clickable-bound="1"]');
+    boundEls.forEach((el) => {
+      if (enabled) {
+        el.classList.add("kokoro-tts-clickable");
+      } else {
+        el.classList.remove("kokoro-tts-clickable");
+      }
+    });
   }
 
   /**
@@ -224,7 +234,8 @@ export class DomManager {
     for (const c of containers) {
       for (const sentence of splitIntoSentences(c.text)) {
         // Skip sentences that contain no letters or digits (like "...")
-        if (!/[a-zA-Z0-9]/.test(sentence)) {
+        // Uses Unicode-aware check to support non-Latin scripts
+        if (!/[\p{L}\p{N}]/u.test(sentence)) {
           continue;
         }
         for (const chunk of sliceLongSentence(sentence)) {
@@ -426,6 +437,7 @@ export class DomManager {
 
   /**
    * Binds click handlers to queue elements.
+   * Respects the current click-to-read toggle state.
    * @param {QueueItem[]} queue
    * @param {(index: number) => void} onClickCallback
    */
@@ -440,9 +452,12 @@ export class DomManager {
 
       boundElements.add(el);
       el.dataset.kokoroClickableBound = "1";
-      el.classList.add("kokoro-tts-clickable");
+      if (this._clickToReadEnabled) {
+        el.classList.add("kokoro-tts-clickable");
+      }
 
       el.addEventListener("click", (e) => {
+        if (!this._clickToReadEnabled) return;
         const idx = this.findClickedIndex(el, e.clientX, e.clientY, queue);
         if (idx >= 0) onClickCallback(idx);
       });
@@ -472,32 +487,86 @@ export class DomManager {
   }
 
   /** @private */
-  _isReadableBlock(el) {
-    if (!(el instanceof HTMLElement) || SKIP_TAGS.has(el.tagName)) return false;
-    const name = el.tagName;
-    if (["P", "LI", "BLOCKQUOTE"].includes(name) || /^H[1-6]$/.test(name)) return true;
-    if (name !== "DIV") return false;
-    const text = el.textContent?.trim() || "";
-    return text.split(/\s+/).length >= 6;
-  }
-
-  /** @private */
   _normalizeTextContent(el) {
     return (el.textContent || "").replace(/\s+/g, " ").trim();
   }
 
-  /** @private */
-  _getCandidateTextMeta(el) {
-    if (!(el instanceof HTMLElement) || SKIP_TAGS.has(el.tagName)) return null;
-    if (!this._isVisible(el) || SIMPLE_INLINE_TAGS.has(el.tagName)) return null;
-    const text = this._normalizeTextContent(el);
-    if (!text.length) return null;
-    return { el, text, isBlock: this._isReadableBlock(el) };
-  }
+  /**
+   * Recursively collects text containers from a block-level element.
+   *
+   * For leaf blocks (no child blocks): the full textContent becomes one
+   * container.
+   *
+   * For mixed-content blocks (direct text/inline + child blocks): each
+   * contiguous run of direct text / inline children becomes its own
+   * container, and child blocks are recursed into separately.  This
+   * ensures e.g. `<div>Direct text<p>Para</p></div>` produces two
+   * containers: one for "Direct text" and one for "Para".
+   *
+   * @private
+   * @param {HTMLElement} el
+   * @param {TextContainer[]} containers
+   */
+  _collectBlocks(el, containers) {
+    if (!(el instanceof HTMLElement)) return;
+    if (SKIP_TAGS.has(el.tagName)) return;
+    if (!this._isVisible(el)) return;
 
-  /** @private */
-  _isAncestorOf(a, b) {
-    return a && b && a !== b && a.contains(b);
+    // Identify direct child block elements
+    const childBlocks = [];
+    for (const child of el.children) {
+      if (
+        child instanceof HTMLElement &&
+        BLOCK_TAGS.has(child.tagName) &&
+        !SKIP_TAGS.has(child.tagName)
+      ) {
+        childBlocks.push(child);
+      }
+    }
+
+    if (childBlocks.length === 0) {
+      // Leaf block (only inline content) — emit full text as one container
+      const text = this._normalizeTextContent(el);
+      if (text) {
+        containers.push({ xpath: this._generateXPath(el), el, text });
+      }
+      return;
+    }
+
+    // Mixed content — walk childNodes to split text at block boundaries
+    /** @type {string[]} */
+    let runTexts = [];
+
+    const flushRun = () => {
+      const runText = runTexts.join("").replace(/\s+/g, " ").trim();
+      if (runText) {
+        containers.push({ xpath: this._generateXPath(el), el, text: runText });
+      }
+      runTexts = [];
+    };
+
+    for (const child of el.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const t = child.textContent || "";
+        if (t) runTexts.push(t);
+      } else if (child.nodeType === Node.ELEMENT_NODE && child instanceof HTMLElement) {
+        if (SKIP_TAGS.has(child.tagName)) continue;
+        if (!this._isVisible(child)) continue;
+
+        if (BLOCK_TAGS.has(child.tagName)) {
+          // Block boundary — flush current inline text run, then recurse
+          flushRun();
+          this._collectBlocks(child, containers);
+        } else {
+          // Inline element — include its text in the current run
+          const t = child.textContent || "";
+          if (t.trim()) runTexts.push(t);
+        }
+      }
+    }
+
+    // Flush any remaining inline text after the last block child
+    flushRun();
   }
 
   /** @private */

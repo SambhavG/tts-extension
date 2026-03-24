@@ -17,6 +17,7 @@
  * @typedef {Object} TtsSettings
  * @property {string} voice - Voice identifier
  * @property {number} speed - Playback speed (0.1 to 4.0)
+ * @property {string} [highlightColor] - Highlight color hex string
  */
 
 /**

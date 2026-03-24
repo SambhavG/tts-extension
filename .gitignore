@@ -1,5 +1,15 @@
 # vendor/
 node_modules/
-.cursor/
 dist/
 tts_extension.zip
+
+# Editor / IDE
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -189,6 +189,10 @@ export async function handleMessage(msg) {
       ctrl.setClickToRead(Boolean(msg.clickToRead));
       return { ok: true };
 
+    case "kokoro:setMaxChunkLength":
+      ctrl.setMaxChunkLength(msg.maxChunkLength);
+      return { ok: true };
+
     case "kokoro:setAutoScroll":
       ctrl.setAutoScroll(Boolean(msg.autoScroll));
       return { ok: true };

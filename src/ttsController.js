@@ -345,6 +345,14 @@ export class TtsController {
   }
 
   /**
+   * Sets the maximum chunk length for sentence slicing.
+   * @param {number} length
+   */
+  setMaxChunkLength(length) {
+    this._dom.setMaxChunkLength(length);
+  }
+
+  /**
    * Sets auto-scroll.
    * @param {boolean} enabled
    */

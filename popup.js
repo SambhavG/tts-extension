@@ -6,6 +6,8 @@ const $voice = $("voice");
 const $speed = $("speed");
 const $readButton = $("read-button");
 const $stopButton = $("stop-button");
+const $maxChunkLength = $("max-chunk-length");
+const $maxChunkValue = $("max-chunk-value");
 const $clickToRead = $("click-to-read");
 const $autoScroll = $("auto-scroll");
 const $highlightColor = $("highlight-color");
@@ -117,13 +119,16 @@ async function refreshVoices() {
 
 // --- UI state management ---
 async function initState() {
-  const stored = await api.storage.sync.get(["kokoroSpeed", "kokoroVoice", "kokoroClickToRead", "kokoroAutoScroll", "kokoroHighlightColor"]);
+  const stored = await api.storage.sync.get(["kokoroSpeed", "kokoroVoice", "kokoroMaxChunkLength", "kokoroClickToRead", "kokoroAutoScroll", "kokoroHighlightColor"]);
   const speed = stored.kokoroSpeed ?? 1.0;
   const voice = stored.kokoroVoice ?? "af_heart";
+  const maxChunkLength = stored.kokoroMaxChunkLength ?? 350;
   const clickToRead = stored.kokoroClickToRead ?? true;
   const autoScroll = stored.kokoroAutoScroll ?? true;
   const highlightColor = stored.kokoroHighlightColor ?? "#22a594";
 
+  $maxChunkLength.value = maxChunkLength;
+  $maxChunkValue.textContent = maxChunkLength;
   $clickToRead.checked = clickToRead;
   $autoScroll.checked = autoScroll;
   $highlightColor.value = highlightColor;
@@ -134,6 +139,7 @@ async function initState() {
   await Promise.all([
     sendToActiveTab({ type: "kokoro:setSpeed", speed }),
     sendToActiveTab({ type: "kokoro:setVoice", voice }),
+    sendToActiveTab({ type: "kokoro:setMaxChunkLength", maxChunkLength }),
     sendToActiveTab({ type: "kokoro:setClickToRead", clickToRead }),
     sendToActiveTab({ type: "kokoro:setAutoScroll", autoScroll }),
     sendToActiveTab({ type: "kokoro:setHighlightColor", color: highlightColor }),
@@ -197,6 +203,16 @@ $speed.addEventListener("change", async () => {
   await api.storage.sync.set({ kokoroSpeed: speed });
   await sendToActiveTab({ type: "kokoro:setSpeed", speed });
   syncUIFromContent();
+});
+
+$maxChunkLength.addEventListener("input", () => {
+  $maxChunkValue.textContent = $maxChunkLength.value;
+});
+
+$maxChunkLength.addEventListener("change", async () => {
+  const maxChunkLength = Number($maxChunkLength.value);
+  await api.storage.sync.set({ kokoroMaxChunkLength: maxChunkLength });
+  await sendToActiveTab({ type: "kokoro:setMaxChunkLength", maxChunkLength });
 });
 
 $clickToRead.addEventListener("change", async () => {

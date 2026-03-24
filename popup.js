@@ -360,6 +360,12 @@ async function loadModelInBackground() {
       return;
     }
 
+    // Send maxChunkLength before initializePopup so buildQueue uses the
+    // correct value during state restoration (avoids queue-length mismatch).
+    const { kokoroMaxChunkLength } = await api.storage.sync.get("kokoroMaxChunkLength");
+    const earlyMaxChunk = kokoroMaxChunkLength ?? 350;
+    await sendToActiveTab({ type: "kokoro:setMaxChunkLength", maxChunkLength: earlyMaxChunk }).catch(() => {});
+
     const initialized = await initializePopup();
     if (!initialized) return;
 
